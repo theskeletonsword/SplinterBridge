@@ -103,18 +103,12 @@ mod tests {
     #[test]
     fn noop_allows_everything() {
         let limiter = NoopRateLimiter;
-        assert_eq!(
-            limiter.check("route:1:2").unwrap(),
-            RateLimitVerdict::Allow
-        );
+        assert_eq!(limiter.check("route:1:2").unwrap(), RateLimitVerdict::Allow);
     }
 
     #[test]
     fn token_bucket_allows_everything_stub() {
         let limiter = TokenBucket::default();
-        assert_eq!(
-            limiter.check("route:1:2").unwrap(),
-            RateLimitVerdict::Allow
-        );
+        assert_eq!(limiter.check("route:1:2").unwrap(), RateLimitVerdict::Allow);
     }
 }

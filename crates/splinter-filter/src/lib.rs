@@ -273,53 +273,26 @@ fn contains_phone(text: &str) -> bool {
 /// formats worldwide without assuming any specific country. Value-free: never
 /// returns the matched text.
 fn contains_national_id(text: &str) -> bool {
-    let bytes = text.as_bytes();
-    let mut i = 0;
-    while i + 9 <= bytes.len() {
-        // Window of the form N N . N N N . N N N - D (12 chars) or variants.
-        for sep1 in [b'.', b' ', b'-'] {
-            for sep2 in [b'.', b' ', b'-'] {
-                for sep3 in [b'-', b' ', b'.'] {
-                    if i + 12 > bytes.len() {
-                        continue;
-                    }
-                    let window = &text[i..i + 12];
-                    if matches_national_id_shape(window, sep1 as char, sep2 as char, sep3 as char)
-                        && national_id_check_digit_valid(window)
-                    {
-                        return true;
-                    }
-                }
-            }
-        }
-        i += 1;
-    }
-    false
+    // Work on bytes: a match is all ASCII, and UTF-8 continuation bytes are never
+    // ASCII, so this cannot split or misread a multi-byte character (CJK text).
+    text.as_bytes().windows(12).any(is_national_id_shape)
 }
 
-/// Matches a window of 12 chars against the shape d d s1 d d d s2 d d d s3 D.
-fn matches_national_id_shape(window: &str, s1: char, s2: char, s3: char) -> bool {
-    let chars: Vec<char> = window.chars().collect();
-    if chars.len() != 12 {
-        return false;
-    }
-    if chars[2] != s1 || chars[6] != s2 || chars[10] != s3 {
-        return false;
-    }
-    chars[..2]
+/// Matches a 12-byte window against `dd s ddd s ddd s C`, where `s` is one of
+/// `.`, space or `-`. The trailing check character is only required to be ASCII
+/// alphanumeric: check-digit algorithms vary by country and cannot be validated
+/// without knowing the issuer.
+fn is_national_id_shape(window: &[u8]) -> bool {
+    let separator = |b: u8| matches!(b, b'.' | b' ' | b'-');
+    window[..2]
         .iter()
-        .chain(&chars[3..6])
-        .chain(&chars[7..10])
-        .all(|c| c.is_ascii_digit())
-}
-
-/// Validates the trailing check digit of a national identifier in a
-/// country-agnostic way. Accepts any alphanumeric trailing character as a
-/// plausible check digit (national-ID check-digit algorithms vary by country
-/// and cannot be validated universally without knowing the issuing country).
-fn national_id_check_digit_valid(window: &str) -> bool {
-    let chars: Vec<char> = window.chars().collect();
-    chars[11].is_ascii_alphanumeric()
+        .chain(&window[3..6])
+        .chain(&window[7..10])
+        .all(u8::is_ascii_digit)
+        && separator(window[2])
+        && separator(window[6])
+        && separator(window[10])
+        && window[11].is_ascii_alphanumeric()
 }
 
 /// Detects an IPv4 address with each octet in 0..=255. Value-free.
@@ -327,10 +300,8 @@ fn contains_ipv4(text: &str) -> bool {
     let bytes = text.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i].is_ascii_digit() {
-            if try_ipv4_from(text, i).is_some() {
-                return true;
-            }
+        if bytes[i].is_ascii_digit() && try_ipv4_from(text, i).is_some() {
+            return true;
         }
         i += 1;
     }
@@ -344,10 +315,7 @@ fn try_ipv4_from(text: &str, start: usize) -> Option<usize> {
     for octet_idx in 0..4 {
         let dig_start = pos;
         let mut dig_len = 0;
-        while pos < text.len()
-            && text.as_bytes()[pos].is_ascii_digit()
-            && dig_len < 3
-        {
+        while pos < text.len() && text.as_bytes()[pos].is_ascii_digit() && dig_len < 3 {
             dig_len += 1;
             pos += 1;
         }
@@ -519,13 +487,38 @@ mod tests {
             assert!(!diag.to_lowercase().contains("example.com"));
             assert!(!diag.to_lowercase().contains("192.168"));
             assert!(!diag.to_lowercase().contains("11.111"));
-            assert_eq!(err.drop_reason_code(), DropReasonCode::DropReasonDirectPiiDetected);
+            assert_eq!(
+                err.drop_reason_code(),
+                DropReasonCode::DropReasonDirectPiiDetected
+            );
         }
-        assert!(filter.scan_direct_pii("just a normal post about music").is_ok());
+        assert!(filter
+            .scan_direct_pii("just a normal post about music")
+            .is_ok());
         // Any national-ID-shaped value must trigger (check-digit algorithms
         // vary by country and cannot be validated universally).
         assert!(filter
             .scan_direct_pii("my national ID is 11.111.111-9")
             .is_err());
+    }
+
+    #[test]
+    fn scan_direct_pii_handles_multibyte_text_without_panicking() {
+        // Regression: slicing &str by byte offsets panicked on CJK/Cyrillic text,
+        // so any long Chinese post crashed both outbound and inbound checks.
+        let filter = PreflightEgressFilter::new();
+        for text in [
+            "我今天在北京吃了很好吃的饺子，真开心",
+            "Привет, как дела? Всё хорошо, спасибо",
+            "混合 mixed текст 😀 with emoji and 中文",
+        ] {
+            assert!(filter.scan_direct_pii(text).is_ok(), "{text}");
+        }
+        // Identifiers embedded in multi-byte text are still detected.
+        assert!(contains_national_id("身份证 11.111.111-1 号码"));
+        assert!(contains_national_id("ID: 12 345 678 K"));
+        assert!(!contains_national_id("11.111.111"));
+        assert!(!contains_national_id("ab.cde.fgh-1x"));
+        assert!(filter.scan_direct_pii("邮箱 user@example.com").is_err());
     }
 }

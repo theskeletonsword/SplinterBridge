@@ -97,7 +97,9 @@ pub(crate) fn check_export(
             &author.display_name,
             &author.public_avatar_url,
         ] {
-            filter.scan_direct_pii(text).map_err(OutboundRejection::DirectPii)?;
+            filter
+                .scan_direct_pii(text)
+                .map_err(OutboundRejection::DirectPii)?;
         }
         filter
             .assess_interaction(origin, destination, &event.text_content)
