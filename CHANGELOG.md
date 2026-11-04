@@ -1,3 +1,28 @@
+# 0.8.0
+
+Anonimización formalmente homologable (CAC / PIPL Art. 73 y NIST SP 800-188), 2026-11-04:
+- Contrato proto extendido sin romper compatibilidad (campos al final): 
+  `SanitizedPublicProfile` añade `generalized_followers_count` (bucket k-anónimo,
+  NIST SP 800-188), `actor_public_key` (Ed25519 del Actor Público Autónomo) y
+  `commitment_hash` (vínculo civil anclado localmente). `CrossBorderEventPayload`
+  añade `content_signature` (firma de autoría del actor), `actor_public_key` y
+  `zk_proof_reference` (referencia a prueba ZK retenida localmente).
+- Nuevo módulo `splinter_core::merkle`: árbol de commitments Merkle; solo la raíz
+  cruza la frontera, la apertura civil queda bajo custodia local de umbral.
+- Nuevo módulo `splinter_core::differential_privacy::generalize_followers_count`
+  para bucketización k-anónima de seguidores.
+- `splinter_filter::PreflightEgressFilter::scan_direct_pii`: detección de PII
+  directa (email, teléfono, IPv4, RUT chileno) que bloquea la exportación con
+  `DropReasonCode::DropReasonDirectPiiDetected`; integrado en
+  `OutboundGateway::check_export` sobre texto, handle, display name y avatar.
+- `splinter_core::identity`: `project_blind_profile_with_options` deriva el
+  follower count generalizado y expone la clave pública y commitment del actor.
+- `docs/HOMOLOGACION_CAC_NIST.md`: arquitectura de cuatro capas para homologar
+  la anonimización ante la CAC (China) y el NIST/FTC (EE. UU.), manteniendo
+  exactamente la experiencia de usuario (nickname, display name, seguidores,
+  posts).
+- Nuevo `OutboundRejection::DirectPii`. Bump de versión a 0.8.0.
+
 # 0.7.0
 
 Anonimización y seudonimización (PIPL art. 73 / GDPR Considerando 26), 2026-11-04:

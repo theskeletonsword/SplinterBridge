@@ -74,6 +74,12 @@ pub struct LocalEventDraft {
     pub text_content: String,
     pub media_hashes: Vec<MediaPerceptualHash>,
     pub target: LocalEventTarget,
+    // Ed25519 signature of the authored content by the actor's private key.
+    pub content_signature: Option<Vec<u8>>,
+    // Actor public key corresponding to content_signature.
+    pub actor_public_key: Option<Vec<u8>>,
+    // Reference to a locally retained zero-knowledge proof of personhood.
+    pub zk_proof_reference: Option<String>,
 }
 
 pub enum LocalEventTarget {
@@ -105,6 +111,12 @@ pub(crate) fn project_local_event(
         )?),
         text_content: draft.text_content.clone(),
         media_hashes: draft.media_hashes.clone(),
+        // Content is signed by the actor key when the caller sets
+        // `content_signature`/`actor_public_key` on the draft; here we start
+        // empty and let `OutboundGateway::prepare` attach the actor signature.
+        content_signature: draft.content_signature.clone().unwrap_or_default(),
+        actor_public_key: draft.actor_public_key.clone().unwrap_or_default(),
+        zk_proof_reference: draft.zk_proof_reference.clone().unwrap_or_default(),
         target_resource_id: match &draft.target {
             LocalEventTarget::None => String::new(),
             LocalEventTarget::LocalResource(id) => {

@@ -125,6 +125,11 @@ pub struct RawInternalUserProfile {
     pub following_count: u64,
     pub is_private: bool,
     pub badges: Vec<VerifiedBadgeType>,
+    // Actor public key (Ed25519) bound to this civil account, set when the user
+    // links an autonomous actor key. Kept local until exported.
+    pub actor_public_key: Option<Vec<u8>>,
+    // Commitment hash binding the actor key to the locally retained civil ID.
+    pub commitment_hash: Option<Vec<u8>>,
 }
 
 impl std::fmt::Debug for RawInternalUserProfile {
@@ -211,6 +216,13 @@ pub fn project_blind_profile_with_options(
             String::new()
         },
         followers_count: raw.followers_count,
+        // Generalized to a k-anonymity bucket so the exact count cannot act as a
+        // re-identification fingerprint (NIST SP 800-188). Default k = 50.
+        generalized_followers_count: crate::differential_privacy::generalize_followers_count(
+            raw.followers_count,
+            50,
+        )
+        .unwrap_or(0),
         following_count: if options.following_count {
             raw.following_count
         } else {
@@ -223,6 +235,8 @@ pub fn project_blind_profile_with_options(
             Vec::new()
         },
         origin_jurisdiction: jurisdiction as i32,
+        actor_public_key: raw.actor_public_key.clone().unwrap_or_default(),
+        commitment_hash: raw.commitment_hash.clone().unwrap_or_default(),
     })
 }
 
@@ -238,6 +252,9 @@ struct CanonicalProfilePayload<'a> {
     following_count: u64,
     is_private: bool,
     origin_jurisdiction: i32,
+    generalized_followers_count: u64,
+    actor_public_key: &'a [u8],
+    commitment_hash: &'a [u8],
 }
 
 impl<'a> From<&'a SanitizedPublicProfile> for CanonicalProfilePayload<'a> {
@@ -252,6 +269,9 @@ impl<'a> From<&'a SanitizedPublicProfile> for CanonicalProfilePayload<'a> {
             following_count: profile.following_count,
             is_private: profile.is_private,
             origin_jurisdiction: profile.origin_jurisdiction,
+            generalized_followers_count: profile.generalized_followers_count,
+            actor_public_key: &profile.actor_public_key,
+            commitment_hash: &profile.commitment_hash,
         }
     }
 }
@@ -430,6 +450,8 @@ mod tests {
             following_count: 85,
             is_private: false,
             badges: vec![VerifiedBadgeType::VerifiedBadgeHardwareAttestedHuman],
+            actor_public_key: None,
+            commitment_hash: None,
         };
 
         let public_profile =
@@ -468,6 +490,8 @@ mod tests {
             following_count: 120,
             is_private: false,
             badges: vec![VerifiedBadgeType::VerifiedBadgeCreatorPartner],
+            actor_public_key: None,
+            commitment_hash: None,
         };
 
         let profile = project_blind_profile(&raw, Jurisdiction::GlobalGdpr, &pepper).unwrap();

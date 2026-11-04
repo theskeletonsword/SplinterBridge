@@ -62,6 +62,20 @@ pub fn k_anonymous_bucket(count: u64, k: u64) -> Result<Option<u64>, Differentia
     Ok(if count >= k { Some(count) } else { None })
 }
 
+/// Generalizes an exact follower count into a k-anonymity bucket so the exact
+/// value cannot act as a re-identification fingerprint (NIST SP 800-188).
+///
+/// Returns the greatest multiple of `k` not exceeding `count`. For example,
+/// `generalize_followers_count(14_892, 50) == 14_850`. The UI can keep
+/// rendering a formatted value (e.g. "14.8K") while the wire-level value is
+/// statistically shared by at least `k` accounts.
+pub fn generalize_followers_count(count: u64, k: u64) -> Result<u64, DifferentialPrivacyError> {
+    if k == 0 {
+        return Err(DifferentialPrivacyError::KMustBePositive);
+    }
+    Ok((count / k) * k)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,6 +114,15 @@ mod tests {
         assert!(noisy_count(1, 0.0).is_err());
         assert!(noisy_count(1, -1.0).is_err());
         assert!(k_anonymous_bucket(1, 0).is_err());
+        assert!(generalize_followers_count(1, 0).is_err());
+    }
+
+    #[test]
+    fn generalize_followers_count_buckets_to_k() {
+        assert_eq!(generalize_followers_count(14_892, 50).unwrap(), 14_850);
+        assert_eq!(generalize_followers_count(14_892, 100).unwrap(), 14_800);
+        assert_eq!(generalize_followers_count(42, 50).unwrap(), 0);
+        assert_eq!(generalize_followers_count(100, 50).unwrap(), 100);
     }
 
     fn mean_abs_deviation(values: &[f64], center: f64) -> f64 {

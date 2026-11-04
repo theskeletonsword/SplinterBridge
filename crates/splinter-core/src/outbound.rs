@@ -28,6 +28,8 @@ pub enum OutboundRejection {
     EmptySafetyCatalog,
     #[error("TMK video matching is not implemented; refusing this export")]
     UnsupportedVideoHash,
+    #[error("DIRECT_PII_DETECTED")]
+    DirectPii(EgressFilterError),
 }
 
 /// Notices accompany every preparation rejection on a restricted cross-region route.
@@ -54,6 +56,7 @@ impl OutboundError {
             RouteNotAllowed => "ROUTE_NOT_ALLOWED",
             ContentNotAllowed => "CONTENT_NOT_ALLOWED",
             UnapprovedProfileFields => "UNKNOWN_FIELD",
+            DirectPii(_) => "DIRECT_PII_DETECTED",
             Media(_) | EmptySafetyCatalog | UnsupportedVideoHash => "MEDIA_POLICY",
             _ => "INVALID_PROJECTION",
         };
@@ -66,6 +69,7 @@ impl OutboundError {
         match &self.reason {
             OutboundRejection::Policy(e) => e.drop_reason_code(),
             OutboundRejection::Media(e) => e.drop_reason_code(),
+            OutboundRejection::DirectPii(e) => e.drop_reason_code(),
             _ => DropReasonCode::DropReasonJurisdictionPolicyViolation,
         }
     }
@@ -84,11 +88,20 @@ pub(crate) fn check_export(
     let check = || -> Result<(), OutboundRejection> {
         assessment.result?;
         crate::boundary::validate_event(event, origin)?;
+        // PII-direct scan: block any authored content or public handle/name that
+        // carries directly identifying information before it crosses the border.
+        let author = event.author.as_ref().expect("validated author");
+        for text in [
+            &event.text_content,
+            &author.handle,
+            &author.display_name,
+            &author.public_avatar_url,
+        ] {
+            filter.scan_direct_pii(text).map_err(OutboundRejection::DirectPii)?;
+        }
         filter
             .assess_interaction(origin, destination, &event.text_content)
             .result?;
-        let author = event.author.as_ref().expect("validated author");
-        // Names and optionally approved avatars must not bypass text policy.
         for text in [
             &author.handle,
             &author.display_name,

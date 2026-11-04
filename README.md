@@ -1,7 +1,7 @@
 # SplinterBridge
 
 Rust libraries and a Protocol Buffers contract for server-to-server federation
-between independently operated social backends. Version 0.7.0, Apache-2.0.
+between independently operated social backends. Version 0.8.0, Apache-2.0.
 The protocol is platform-neutral: TikTok/Douyin, Meta products and other networks
 are possible integration examples, not dependencies or existing partnerships.
 
@@ -18,7 +18,7 @@ and does not guarantee regulatory compliance, anonymity, or absence of personal 
 | `splinter-core` | Minimal projection, route opt-in, async semantic review gate, host-local gRPC classifier client, inbound verification, Ed25519 signatures |
 | `splinter-filter` | Route-specific literal matching with lowercase, fullwidth ASCII and common invisible/whitespace normalization |
 | `splinter-safety` | Local Hamming-distance comparison of supplied 256-bit fingerprints |
-| `splinter-core` (modules) | `ephemeral`: unlinkable ephemeral DIDs with rotating seeds and crypto-shredding; `differential_privacy`: Laplace/Gaussian noise, ε-counting and k-anonymity gates for aggregated metrics |
+| `splinter-core` (modules) | `ephemeral`: unlinkable ephemeral DIDs with rotating seeds and crypto-shredding; `differential_privacy`: Laplace/Gaussian noise, ε-counting and k-anonymity gates for aggregated metrics; `merkle`: local Merkle commitments binding an actor to a retained civil identity (root only crosses the border) |
 
 The facade crate `splinter-core` re-exports the other crates' APIs.
 
@@ -327,6 +327,27 @@ anonymous: a face or voice with a stable handle links content to a physical
 person. The realistic industry path is to homologate this shielded pseudonymization
 within formal transfer mechanisms (CAC assessment / standard contractual clauses),
 not to claim anonymous profiles. Full analysis: docs/ANONYMIZACION.md.
+
+### Anonimización formalmente homologable (CAC / PIPL Art. 73 y NIST SP 800-188)
+
+v0.8.0 extiende el contrato proto sin romper compatibilidad para acercar el
+perfil público a la definición de anonimización:
+
+- `generalized_followers_count`: conteo de seguidores bucketizado k-anónimo
+  (NIST SP 800-188); la UI sigue mostrando un valor formateado (ej. `14.8K`).
+- `actor_public_key`: clave Ed25519 del Actor Público Autónomo, desacoplada del
+  ID civil.
+- `commitment_hash`: compromiso Merkle que vincula el actor a la identidad civil
+  retenida localmente; solo la raíz cruza la frontera.
+- `content_signature` y `zk_proof_reference`: firma de autoría del actor y
+  referencia a una prueba ZK retenida en la jurisdicción de origen.
+- `scan_direct_pii`: bloquea exportaciones con correo, teléfono, IPv4 o RUT
+  chileno directamente identificadores.
+
+La experiencia de usuario se mantiene exactamente igual (nickname, display
+name, seguidores, posts), pero el vínculo civil queda anclado bajo custodia
+local de umbral (Shamir), auditable solo ante orden judicial local. Véase
+docs/HOMOLOGACION_CAC_NIST.md.
 
 ### Migration from earlier releases
 

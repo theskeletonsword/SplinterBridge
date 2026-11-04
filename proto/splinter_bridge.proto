@@ -30,6 +30,9 @@ enum DropReasonCode {
   DROP_REASON_ATTESTATION_VERIFICATION_FAILED = 6;
   // Replay protection failure: timestamp drift exceeded threshold or nonce was reused.
   DROP_REASON_REPLAY_DETECTED = 7;
+  // Direct personally identifiable information detected in authored content;
+  // export blocked before crossing the border (PII-direct filter).
+  DROP_REASON_DIRECT_PII_DETECTED = 8;
 }
 
 // Cryptographic badge types indicating verified public status without leaking underlying identity documents.
@@ -81,6 +84,22 @@ message SanitizedPublicProfile {
   repeated VerifiedBadgeType badges = 8;
   // Origin jurisdiction.
   Jurisdiction origin_jurisdiction = 9;
+
+  // Follower count generalized to a k-anonymity bucket (e.g. 14800 instead of
+  // 14892) to prevent re-identification via a unique exact count (NIST SP 800-188).
+  // The UI may keep rendering a formatted value (e.g. "14.8K"); this is the
+  // wire-level generalized value.
+  uint64 generalized_followers_count = 10;
+
+  // Ephemeral actor public key (Ed25519) used to sign authored content. Decouples
+  // the public persona from the civil identity; the civil-to-actor mapping is
+  // retained only in the origin jurisdiction under threshold escrow.
+  bytes actor_public_key = 11;
+
+  // Commitment hash binding the actor to a locally retained civil identity.
+  // Openable only via local threshold escrow; never reveals the civil ID to the
+  // receiving cluster or to an attacker in transit.
+  bytes commitment_hash = 12;
 }
 
 // Supported cross-border event types.
@@ -123,6 +142,19 @@ message CrossBorderEventPayload {
   // Opaque identity of the published resource itself, independent of the event ID.
   // Receivers can index this projection locally and resolve replies without remote DB access.
   string resource_id = 9;
+
+  // Ed25519 signature of the authored content hash by the actor's private key,
+  // proving authorship without revealing the civil identity.
+  bytes content_signature = 10;
+
+  // Actor public key corresponding to content_signature, carried alongside the
+  // profile for convenient inbound verification.
+  bytes actor_public_key = 11;
+
+  // Reference (commitment hash) to a locally retained zero-knowledge proof of
+  // personhood / membership. The full SNARK proof remains inside the origin
+  // jurisdiction; only the reference crosses the border.
+  string zk_proof_reference = 12;
 }
 
 // UI notices determined by the participating backend jurisdictions, not nationality.

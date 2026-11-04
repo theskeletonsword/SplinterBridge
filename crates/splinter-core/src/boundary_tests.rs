@@ -94,6 +94,8 @@ fn raw(private: bool) -> RawInternalUserProfile {
         following_count: 456,
         is_private: private,
         badges: vec![VerifiedBadgeType::VerifiedBadgeOfficialOrganization],
+        actor_public_key: None,
+        commitment_hash: None,
     }
 }
 fn draft(kind: FederatedEventType, text: &str) -> LocalEventDraft {
@@ -114,6 +116,9 @@ fn draft(kind: FederatedEventType, text: &str) -> LocalEventDraft {
         } else {
             LocalEventTarget::LocalResource("SECRET-internal-resource".into())
         },
+        content_signature: None,
+        actor_public_key: None,
+        zk_proof_reference: None,
     }
 }
 fn decode(e: &FederatedEventEnvelope) -> CrossBorderEventPayload {

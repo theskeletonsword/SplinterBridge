@@ -35,6 +35,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             following_count: 10,
             is_private: true,
             badges: vec![],
+            actor_public_key: None,
+            commitment_hash: None,
         };
         let draft = LocalEventDraft {
             local_event_id: "local-profile-update-id".into(),
@@ -48,6 +50,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             text_content: String::new(),
             media_hashes: vec![],
             target: LocalEventTarget::None,
+            content_signature: None,
+            actor_public_key: None,
+            zk_proof_reference: None,
         };
         let outbound = OutboundGateway::new(
             origin,

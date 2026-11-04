@@ -7,6 +7,7 @@ pub mod boundary;
 pub mod differential_privacy;
 pub mod ephemeral;
 pub mod identity;
+pub mod merkle;
 pub mod inbound;
 pub mod outbound;
 pub mod review;

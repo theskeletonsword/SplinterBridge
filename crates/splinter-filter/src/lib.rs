@@ -19,6 +19,9 @@ pub enum EgressFilterError {
 
     #[error("Unsupported or unspecified destination jurisdiction: {0:?}")]
     InvalidJurisdiction(Jurisdiction),
+
+    #[error("DIRECT_PII_DETECTED")]
+    DirectPiiDetected { drop_code: DropReasonCode },
 }
 
 impl EgressFilterError {
@@ -27,6 +30,7 @@ impl EgressFilterError {
         match self {
             Self::CacViolation { drop_code, .. } => *drop_code,
             Self::RknViolation { drop_code, .. } => *drop_code,
+            Self::DirectPiiDetected { drop_code, .. } => *drop_code,
             Self::InvalidJurisdiction(_) => DropReasonCode::DropReasonJurisdictionPolicyViolation,
         }
     }
@@ -162,6 +166,23 @@ impl PreflightEgressFilter {
         InteractionAssessment { notices, result }
     }
 
+    /// Scans text for directly identifying personal information (email, phone,
+    /// IPv4 address, Chilean RUT / national identifier). Returns an error when
+    /// direct PII is detected so the export is blocked before crossing the
+    /// border. Errors never echo the matched value.
+    pub fn scan_direct_pii(&self, text: &str) -> Result<(), EgressFilterError> {
+        if contains_email(text)
+            || contains_phone(text)
+            || contains_ipv4(text)
+            || contains_chilean_rut(text)
+        {
+            return Err(EgressFilterError::DirectPiiDetected {
+                drop_code: DropReasonCode::DropReasonDirectPiiDetected,
+            });
+        }
+        Ok(())
+    }
+
     /// Evaluates text payload against the target destination jurisdiction in memory.
     /// Returns `Ok(())` when no catalog term matches, or `Err(EgressFilterError)`
     /// if the payload must be dropped before crossing borders.
@@ -226,6 +247,134 @@ fn normalize_for_matching(text: &str) -> String {
         }
     }
     result
+}
+
+/// Detects an email-like token (`local@domain.tld`). Value-free: never returns
+/// the matched text.
+fn contains_email(text: &str) -> bool {
+    let Some(at) = text.find('@') else {
+        return false;
+    };
+    let Some(domain) = text.get(at + 1..) else {
+        return false;
+    };
+    domain.contains('.') && domain.len() >= 3
+}
+
+/// Detects a phone-like sequence of 7+ digits. National identifiers such as
+/// the Chilean RUT use dots, so dotted text is skipped to avoid false
+/// positives. Value-free: never returns the matched text.
+fn contains_phone(text: &str) -> bool {
+    if text.contains('.') {
+        return false;
+    }
+    let digits: u32 = text.chars().filter(|c| c.is_ascii_digit()).count() as u32;
+    digits >= 7
+}
+
+/// Detects an IPv4 address with each octet in 0..=255. Value-free.
+fn contains_ipv4(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i].is_ascii_digit() {
+            if try_ipv4_from(text, i).is_some() {
+                return true;
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
+/// Attempts to read four dot-separated octets starting at `start`.
+/// Returns the position just after the last octet on success.
+fn try_ipv4_from(text: &str, start: usize) -> Option<usize> {
+    let mut pos = start;
+    for octet_idx in 0..4 {
+        let dig_start = pos;
+        let mut dig_len = 0;
+        while pos < text.len()
+            && text.as_bytes()[pos].is_ascii_digit()
+            && dig_len < 3
+        {
+            dig_len += 1;
+            pos += 1;
+        }
+        if dig_len == 0 {
+            return None;
+        }
+        // Reject leading zeros (e.g. "01") except for "0" itself.
+        if dig_len > 1 && text.as_bytes()[dig_start] == b'0' {
+            return None;
+        }
+        // parse::<u8>() already rejects values above 255.
+        let _octet: u8 = text[dig_start..pos].parse().ok()?;
+        if octet_idx < 3 {
+            if pos >= text.len() || text.as_bytes()[pos] != b'.' {
+                return None;
+            }
+            pos += 1;
+        }
+    }
+    Some(pos)
+}
+
+/// Detects a Chilean RUT (`NN.NNN.NNN-K` / `NN.NNN.NNN-Kk`) with a valid
+/// modulo-11 check digit. Value-free.
+fn contains_chilean_rut(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i + 12 <= bytes.len() {
+        let window = &text[i..i + 12];
+        if let Some(dv) = parse_chilean_rut(window) {
+            if rut_check_digit(&window[..window.len() - 2]) == dv {
+                return true;
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
+/// The modulo-11 check digit for the RUT body (digits only, no dots/dash).
+fn rut_check_digit(body: &str) -> char {
+    let mut sum = 0;
+    let mut factor = 2;
+    for ch in body.chars().rev() {
+        if let Some(d) = ch.to_digit(10) {
+            sum += d * factor;
+            factor = if factor == 7 { 2 } else { factor + 1 };
+        }
+    }
+    let rem = 11 - (sum % 11);
+    match rem {
+        11 => '0',
+        10 => 'K',
+        r => char::from_digit(r as u32, 10).unwrap_or('0'),
+    }
+}
+
+/// Parses a `NN.NNN.NNN-D` window, returning the check digit char if the shape
+/// matches (digits and separators in the right places).
+fn parse_chilean_rut(window: &str) -> Option<char> {
+    let chars: Vec<char> = window.chars().collect();
+    if chars.len() != 12 {
+        return None;
+    }
+    // Expected positions: d d . d d d . d d d - D
+    if chars[2] != '.' || chars[6] != '.' || chars[10] != '-' {
+        return None;
+    }
+    let body: String = chars[..2]
+        .iter()
+        .chain(&chars[3..6])
+        .chain(&chars[7..10])
+        .collect();
+    if !body.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    Some(chars[11])
 }
 
 #[cfg(test)]
@@ -359,5 +508,26 @@ mod tests {
         // A post containing 'Winnie the Pooh' sent towards Global/GDPR is unrestricted
         let text = "Winnie the Pooh meme for friends";
         assert!(filter.check_text(Jurisdiction::GlobalGdpr, text).is_ok());
+    }
+
+    #[test]
+    fn scan_direct_pii_blocks_identifiers_without_echoing_them() {
+        let filter = PreflightEgressFilter::new();
+        for text in [
+            "contact me at skels@example.com",
+            "call +56 9 8765 4321",
+            "server at 192.168.1.100",
+            "my RUT is 11.111.111-1",
+        ] {
+            let err = filter.scan_direct_pii(text).unwrap_err();
+            let diag = format!("{err:?}");
+            assert!(!diag.to_lowercase().contains("example.com"));
+            assert!(!diag.to_lowercase().contains("192.168"));
+            assert!(!diag.to_lowercase().contains("11.111"));
+            assert_eq!(err.drop_reason_code(), DropReasonCode::DropReasonDirectPiiDetected);
+        }
+        assert!(filter.scan_direct_pii("just a normal post about music").is_ok());
+        // RUT with invalid check digit must not trigger.
+        assert!(filter.scan_direct_pii("my RUT is 11.111.111-9").is_ok());
     }
 }
