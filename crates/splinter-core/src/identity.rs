@@ -440,11 +440,11 @@ mod tests {
         let raw = RawInternalUserProfile {
             internal_user_id: "int_884920".into(),
             national_id_hash: Some("cn_id_110101199003072345".into()),
-            email: Some("skels@example.com".into()),
+            email: Some("user@example.com".into()),
             phone: Some("+8613800138000".into()),
             internal_ip_address: Some("192.168.1.100".into()),
-            handle: "@theskeletonsword".into(),
-            display_name: "perex".into(),
+            handle: "@example".into(),
+            display_name: "example".into(),
             avatar_url: "https://cdn.splinterbridge.org/avatars/skels.webp".into(),
             followers_count: 14200,
             following_count: 85,
@@ -457,8 +457,8 @@ mod tests {
         let public_profile =
             project_blind_profile(&raw, Jurisdiction::GlobalGdpr, &pepper).unwrap();
 
-        assert_eq!(public_profile.handle, "@theskeletonsword");
-        assert_eq!(public_profile.display_name, "perex");
+        assert_eq!(public_profile.handle, "@example");
+        assert_eq!(public_profile.display_name, "example");
         assert_eq!(public_profile.followers_count, 14200);
         assert_eq!(public_profile.following_count, 0);
         assert!(!public_profile.is_private);
@@ -483,9 +483,9 @@ mod tests {
             email: None,
             phone: None,
             internal_ip_address: None,
-            handle: "@theskeletonsword".into(),
-            display_name: "perex".into(),
-            avatar_url: "https://cdn.splinterbridge.org/avatars/perex.webp".into(),
+            handle: "@example".into(),
+            display_name: "example".into(),
+            avatar_url: "https://cdn.splinterbridge.org/avatars/example.webp".into(),
             followers_count: 500,
             following_count: 120,
             is_private: false,

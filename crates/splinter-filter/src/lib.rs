@@ -509,7 +509,7 @@ mod tests {
     fn scan_direct_pii_blocks_identifiers_without_echoing_them() {
         let filter = PreflightEgressFilter::new();
         for text in [
-            "contact me at skels@example.com",
+            "contact me at user@example.com",
             "call +56 9 8765 4321",
             "server at 192.168.1.100",
             "my national ID is 11.111.111-1",

@@ -68,9 +68,9 @@ message SanitizedPublicProfile {
   // Irreversible pseudonym: HMAC-SHA256(internal_user_id, regional_pepper).
   // Format: "did:splinter:<jurisdiction_code>:<hex_digest>"
   string federated_did = 1;
-  // Canonical handle visible across borders (e.g., "@theskeletonsword").
+  // Canonical handle visible across borders (e.g., "@example").
   string handle = 2;
-  // Display name visible in UI (e.g., "perex").
+  // Display name visible in UI (e.g., "example").
   string display_name = 3;
   // Public avatar asset URL hosted on a federated edge CDN (zero origin IP exposure).
   string public_avatar_url = 4;

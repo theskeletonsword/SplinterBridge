@@ -95,7 +95,7 @@ repository.
 ## 3. The real social network dilemma
 
 If the user publishes a video with their face or voice and assigns a persistent
-identifier so their followers can recognize them (@perex, video and comment
+identifier so their followers can recognize them (@example, video and comment
 history), it is ontologically impossible to speak of absolute legal anonymization:
 there will always be the capacity to link the content to a physical person.
 

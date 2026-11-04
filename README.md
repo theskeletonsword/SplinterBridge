@@ -5,7 +5,7 @@ between independently operated social backends. Version 0.8.0, Apache-2.0.
 The protocol is platform-neutral: TikTok/Douyin, Meta products and other networks
 are possible integration examples, not dependencies or existing partnerships.
 
-Copyright 2026 TheSkeletonSword (perex). See LICENSE and NOTICE.
+Copyright 2026 SplinterBridge . See LICENSE and NOTICE.
 
 This is a reference implementation. It does not connect to TikTok or Douyin,
 and does not guarantee regulatory compliance, anonymity, or absence of personal data.

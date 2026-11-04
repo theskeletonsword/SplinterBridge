@@ -40,7 +40,7 @@ ephemeral key pair specific to the federation (`SK_actor`, `PK_actor`).
 ```
 [ Local Civil Backend ]                              [ Remote Federated Network ]
 ┌─────────────────────────┐                          ┌─────────────────────────┐
-│ Civil ID (Shimingzhi)   │                          │ handle: @perex          │
+│ Civil ID (Shimingzhi)   │                          │ handle: @example          │
 │ National ID / Passport  │                          │ display_name: Agustín   │
 │ FIDO2 / Secure Enclave  │                          │ followers_count: 14.8K  │
 └────────────┬────────────┘                          │ public_key: Ed25519_pub │
@@ -56,7 +56,7 @@ ephemeral key pair specific to the federation (`SK_actor`, `PK_actor`).
              civil<->actor retained under local custody             │
 ```
 
-- For the remote cluster, `@perex` is a verified, live entity, but **no
+- For the remote cluster, `@example` is a verified, live entity, but **no
   mathematical function or relational table** allows deducing the document
   number, phone or email that originated the account.
 - The full ZK proof is retained **within the origin jurisdiction**; only a
@@ -137,7 +137,7 @@ to render the profile with its posts.
 | Element | Current version (0.6.0) | CAC/NIST homologable model | Visual impact on app |
 |---|---|---|---|
 | Internal identifier | `did:splinter:<region>:<hmac>` (origin-reversible pseudonym) | Autonomous Actor public key + humanity ZK proof | None (internal routing ID) |
-| Nickname / Handle | Plain text (`@handle`) | Federated namespace validated by origin signature | Identical (`@perex`) |
+| Nickname / Handle | Plain text (`@handle`) | Federated namespace validated by origin signature | Identical (`@example`) |
 | Display name | Plain text | Plain text + direct PII filter | Identical |
 | Followers | Raw exact integer (`14892`) | k-anonymized bucketized value (`14800`) | Imperceptible (UI shows `14.8K`) |
 | Posts and content | Literal catalog filter | Authorship signature + semantic PII filter | Identical |

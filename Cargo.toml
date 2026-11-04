@@ -10,10 +10,10 @@ members = [
 [workspace.package]
 version = "0.9.0"
 edition = "2021"
-authors = ["TheSkeletonSword <skels@splinterbridge.org>"]
+authors = ["SplinterBridge"]
 license = "Apache-2.0"
-repository = "https://github.com/TheSkeletonSword/SplinterBridge"
-homepage = "https://github.com/TheSkeletonSword/SplinterBridge"
+repository = "https://github.com/SplinterBridge/SplinterBridge"
+homepage = "https://github.com/SplinterBridge/SplinterBridge"
 readme = "README.md"
 description = "SplinterBridge: Zero-Trust S2S Partitioned Federation Engine for Sovereign Social Backends"
 
