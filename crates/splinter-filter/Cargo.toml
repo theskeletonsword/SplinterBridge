@@ -1,0 +1,13 @@
+[package]
+name = "splinter-filter"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+splinter-proto.workspace = true
+aho-corasick.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+serde.workspace = true

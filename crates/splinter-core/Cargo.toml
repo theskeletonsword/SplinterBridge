@@ -1,0 +1,23 @@
+[package]
+name = "splinter-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+splinter-proto.workspace = true
+splinter-filter.workspace = true
+splinter-safety.workspace = true
+
+tokio.workspace = true
+tonic.workspace = true
+ed25519-dalek.workspace = true
+sha2.workspace = true
+hmac.workspace = true
+hex.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

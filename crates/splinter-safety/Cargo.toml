@@ -1,0 +1,13 @@
+[package]
+name = "splinter-safety"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+splinter-proto.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+serde.workspace = true
+hex.workspace = true

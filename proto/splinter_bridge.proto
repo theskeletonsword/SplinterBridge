@@ -1,0 +1,170 @@
+syntax = "proto3";
+
+package splinterbridge.v1;
+
+// Jurisdiction indicates the data sovereignty and regulatory realm of a node or cluster.
+enum Jurisdiction {
+  JURISDICTION_UNSPECIFIED = 0;
+  // Western / International jurisdiction governed under GDPR, CCPA, and allied frameworks.
+  JURISDICTION_GLOBAL_GDPR = 1;
+  // Mainland China sovereign space governed under PIPL, DSL, and Cyberspace Administration of China (CAC).
+  JURISDICTION_CN_PIPL_CAC = 2;
+  // Russian Federation sovereign space governed under Federal Law No. 152-FZ and Roskomnadzor (RKN).
+  JURISDICTION_RU_152_FZ   = 3;
+}
+
+// Reason codes returned when an outbound or inbound federated transaction is intercepted or dropped.
+enum DropReasonCode {
+  DROP_REASON_NONE = 0;
+  // Outbound content contained vocabulary prohibited by destination CAC regulations.
+  DROP_REASON_CAC_EGRESS_RESTRICTED_TERM = 1;
+  // Outbound content contained vocabulary prohibited by destination RKN regulations.
+  DROP_REASON_RKN_EGRESS_RESTRICTED_TERM = 2;
+  // Media perceptual hash matched the StopNCII zero-knowledge database within Hamming threshold.
+  DROP_REASON_STOPNCII_PERCEPTUAL_HASH_MATCH = 3;
+  // Destination jurisdiction policy rejects unverified or non-attested origin nodes.
+  DROP_REASON_JURISDICTION_POLICY_VIOLATION = 4;
+  // Origin cluster cryptographic signature failed validation (Ed25519 mismatch).
+  DROP_REASON_INVALID_ORIGIN_SIGNATURE = 5;
+  // Hardware enclave or reputation attestation token failed verification.
+  DROP_REASON_ATTESTATION_VERIFICATION_FAILED = 6;
+  // Replay protection failure: timestamp drift exceeded threshold or nonce was reused.
+  DROP_REASON_REPLAY_DETECTED = 7;
+}
+
+// Cryptographic badge types indicating verified public status without leaking underlying identity documents.
+enum VerifiedBadgeType {
+  VERIFIED_BADGE_NONE = 0;
+  VERIFIED_BADGE_HARDWARE_ATTESTED_HUMAN = 1;
+  VERIFIED_BADGE_CREATOR_PARTNER = 2;
+  VERIFIED_BADGE_OFFICIAL_ORGANIZATION = 3;
+}
+
+// Hardware enclave classification for zero-PII humanity verification.
+enum EnclaveType {
+  ENCLAVE_TYPE_UNSPECIFIED = 0;
+  ENCLAVE_TYPE_APPLE_SECURE_ENCLAVE = 1;
+  ENCLAVE_TYPE_ANDROID_STRONGKEY = 2;
+  ENCLAVE_TYPE_FIDO2_WEBAUTHN = 3;
+  ENCLAVE_TYPE_REPUTATION_GRAPH = 4;
+}
+
+// Zero-PII humanity attestation submitted to prove the actor is a legitimate non-bot entity.
+message HardwareAttestation {
+  EnclaveType enclave_type = 1;
+  // Cryptographic assertion token produced by the client hardware enclave (Base64 encoded).
+  string assertion_token = 2;
+  // Ephemeral challenge issued by the origin cluster.
+  bytes challenge = 3;
+  // Unix timestamp of attestation generation.
+  int64 timestamp_epoch_ms = 4;
+}
+
+// Blind Identity Projection: The public, sanitized representation of an actor crossing boundaries.
+message SanitizedPublicProfile {
+  // Irreversible pseudonym: HMAC-SHA256(internal_user_id, regional_pepper).
+  // Format: "did:splinter:<jurisdiction_code>:<hex_digest>"
+  string federated_did = 1;
+  // Canonical handle visible across borders (e.g., "@theskeletonsword").
+  string handle = 2;
+  // Display name visible in UI (e.g., "perex").
+  string display_name = 3;
+  // Public avatar asset URL hosted on a federated edge CDN (zero origin IP exposure).
+  string public_avatar_url = 4;
+  // Aggregated follower counter (no individual relationship graph leaked).
+  uint64 followers_count = 5;
+  // Aggregated following counter.
+  uint64 following_count = 6;
+  // Account visibility flag.
+  bool is_private = 7;
+  // Zero-PII verification badges.
+  repeated VerifiedBadgeType badges = 8;
+  // Origin jurisdiction.
+  Jurisdiction origin_jurisdiction = 9;
+}
+
+// Supported cross-border event types.
+enum FederatedEventType {
+  EVENT_TYPE_UNSPECIFIED = 0;
+  EVENT_TYPE_POST_PUBLISH = 1;
+  EVENT_TYPE_COMMENT_PUBLISH = 2;
+  EVENT_TYPE_ENGAGEMENT_INTERACTION = 3;
+  EVENT_TYPE_PROFILE_SYNC = 4;
+}
+
+// Media perceptual fingerprint container for StopNCII and child safety pre-flight checks.
+message MediaPerceptualHash {
+  // Standard PDQ 256-bit perceptual hash (32 raw bytes).
+  bytes pdq_hash = 1;
+  // Standard TMK (Temporal Match Kernel) perceptual video hash (optional, 32 bytes).
+  bytes tmk_hash = 2;
+  // MIME type of the underlying media payload.
+  string mime_type = 3;
+}
+
+// The core event payload encapsulating social interaction across borders.
+message CrossBorderEventPayload {
+  // Unique UUIDv4 event identifier.
+  string event_id = 1;
+  // Canonical event type.
+  FederatedEventType event_type = 2;
+  // Timestamp when event occurred at origin cluster.
+  int64 timestamp_epoch_ms = 3;
+  // Cryptographic nonce preventing cross-border replay attacks.
+  uint64 nonce = 4;
+  // Sanitized author profile projection.
+  SanitizedPublicProfile author = 5;
+  // Textual content (UTF-8) after passing pre-flight egress filters.
+  string text_content = 6;
+  // Perceptual hashes of any attached media (verified against StopNCII).
+  repeated MediaPerceptualHash media_hashes = 7;
+  // Parent resource identifier if this event is a comment or interaction.
+  string target_resource_id = 8;
+}
+
+// Envelope encapsulating the event, metadata, and Ed25519 signature of the issuing cluster.
+message FederatedEventEnvelope {
+  // Binary serialized CrossBorderEventPayload.
+  bytes payload_bytes = 1;
+  // Jurisdiction where the event was authored.
+  Jurisdiction origin_jurisdiction = 2;
+  // Destination jurisdiction targeted for federation.
+  Jurisdiction destination_jurisdiction = 3;
+  // Public key ID or certificate fingerprint of the issuing gateway cluster.
+  string origin_gateway_key_id = 4;
+  // Ed25519 digital signature over payload_bytes generated by origin gateway private key.
+  bytes ed25519_signature = 5;
+  // Optional zero-PII hardware humanity attestation.
+  HardwareAttestation humanity_attestation = 6;
+}
+
+// Response returned by the remote gateway upon event dispatch.
+message FederatedEventResponse {
+  bool accepted = 1;
+  DropReasonCode drop_reason = 2;
+  string message = 3;
+  string remote_event_ack_id = 4;
+  int64 processed_at_epoch_ms = 5;
+}
+
+// Health check request/response for server-to-server interconnect.
+message HealthCheckRequest {
+  Jurisdiction querying_jurisdiction = 1;
+}
+
+message HealthCheckResponse {
+  bool healthy = 1;
+  Jurisdiction responding_jurisdiction = 2;
+  string version = 3;
+  int64 server_time_epoch_ms = 4;
+}
+
+// The core server-to-server SplinterBridge gRPC service interface.
+service SplinterBridgeService {
+  // Dispatches a cross-border event over mTLS to the target jurisdiction cluster.
+  rpc DispatchFederatedEvent(FederatedEventEnvelope) returns (FederatedEventResponse);
+  // Verifies an isolated zero-PII hardware attestation challenge.
+  rpc VerifyHardwareAttestation(HardwareAttestation) returns (FederatedEventResponse);
+  // Heartbeat and status check between bilateral federation gateways.
+  rpc CheckHealth(HealthCheckRequest) returns (HealthCheckResponse);
+}
