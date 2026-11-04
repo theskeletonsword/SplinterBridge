@@ -3,12 +3,16 @@
 //! Provides the primary orchestration engine for server-to-server (S2S)
 //! cross-border federation between isolated sovereign social networks.
 
+pub mod audit_log;
+pub mod attestation;
 pub mod boundary;
 pub mod differential_privacy;
+pub mod doj_compliance;
 pub mod ephemeral;
 pub mod hsm;
 pub mod identity;
 pub mod inbound;
+pub mod killswitch;
 pub mod merkle;
 pub mod outbound;
 pub mod outbox;
@@ -43,6 +47,13 @@ pub use outbox::{Inbox, Outbox, OutboxError, NoopInbox, NoopOutbox};
 pub use rate_limit::{NoopRateLimiter, RateLimitError, RateLimiter, RateLimitVerdict, TokenBucket};
 pub use replay::{DEFAULT_REPLAY_WINDOW_SECONDS, ReplayCache, ReplayCacheError, SlidingWindowReplayCache};
 pub use splinter_filter::{EgressFilterError, InteractionAssessment, PreflightEgressFilter};
+pub use audit_log::{AuditLog, AuditLogError, AuditRecord, NoopAuditLog};
+pub use doj_compliance::{
+    ContentClassification, ContentClassifier, DojComplianceError, DenyAllClassifier,
+    DenyAllPaFacade, PaFacadeChecker,
+};
+pub use attestation::{AttestationError, AttestationReport, AttestationVerifier, DenyAllAttestation, EnclaveType};
+pub use killswitch::{DefaultKillSwitch, KillSwitch, KillSwitchError, KillSwitchStatus};
 pub use splinter_proto::*;
 pub use splinter_safety::{PdqHash, StopNciiEngine, StopNciiError, DEFAULT_PDQ_HAMMING_THRESHOLD};
 
