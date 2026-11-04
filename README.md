@@ -1,11 +1,11 @@
 # SplinterBridge
 
 Rust libraries and a Protocol Buffers contract for server-to-server federation
-between independently operated social backends. Version 0.8.0, Apache-2.0.
+between independently operated social backends. Version 0.9.0, Apache-2.0.
 The protocol is platform-neutral: TikTok/Douyin, Meta products and other networks
 are possible integration examples, not dependencies or existing partnerships.
 
-Copyright 2026 SplinterBridge . See LICENSE and NOTICE.
+Copyright 2026 SplinterBridge. See LICENSE and NOTICE.
 
 This is a reference implementation. It does not connect to TikTok or Douyin,
 and does not guarantee regulatory compliance, anonymity, or absence of personal data.
@@ -136,7 +136,7 @@ activation controls. It is engineering guidance, not a deployment-specific legal
 opinion. The regional operator must assess the actual parties, purposes, data,
 scale and current applicable measures with qualified counsel.
 
-Version 0.6.0 stores the pepper in process memory, not an HSM; rejects unsupported
+Version 0.9.0 stores the pepper in process memory, not an HSM; rejects unsupported
 hardware attestations; and compares supplied media fingerprints without generating
 PDQ or implementing TMK. Ed25519 authenticates signed data; it does not encrypt
 payloads. Public handles and names can identify users even when protocol IDs are
@@ -331,7 +331,7 @@ not to claim anonymous profiles. Full analysis: docs/ANONYMIZATION.md.
 
 ### Formally homologable anonymization (CAC / PIPL Art. 73 and NIST SP 800-188)
 
-v0.8.0 extends the proto contract without breaking compatibility to bring the
+v0.9.0 extends the proto contract without breaking compatibility to bring the
 public profile closer to the definition of anonymization:
 
 - `generalized_followers_count`: k-anonymized bucketized follower count
