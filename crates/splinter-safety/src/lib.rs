@@ -1,18 +1,15 @@
 //! SplinterBridge Zero-Knowledge StopNCII Digital Safety Engine.
 //!
-//! Provides autonomous, in-memory perceptual hash evaluation for PDQ (256-bit)
-//! and TMK signatures without performing external API network requests in the
-//! hot path and without leaking media or cross-border telemetry.
-//!
-//! Uses hardware-vectorized bitwise Hamming distance computation (`popcnt`)
-//! over 256-bit blocks to intercept prohibited media prior to cross-border dispatch.
+//! Compares supplied 256-bit fingerprints with a local in-memory catalog.
+//! No media decoding, PDQ generation, TMK evaluation or external feed retrieval
+//! is implemented. Local hash matching is not a zero-knowledge proof.
 
 use splinter_proto::DropReasonCode;
 use std::sync::RwLock;
 use thiserror::Error;
 
-/// Industry-standard maximum Hamming distance for PDQ perceptual hash matching (out of 256 bits).
-/// Hashes with distance <= 31 represent visually identical or near-identical media variants.
+/// Default inclusive matching threshold, out of 256 bits.
+/// Actual similarity and false-positive rates depend on the hash source and media.
 pub const DEFAULT_PDQ_HAMMING_THRESHOLD: u32 = 31;
 
 /// Represents a 256-bit perceptual hash (PDQ) as four 64-bit words for fast vectorization.
@@ -49,11 +46,11 @@ impl PdqHash {
         Ok(Self::from_bytes(&raw))
     }
 
-    /// Computes hardware-accelerated Hamming distance between two 256-bit hashes using `popcnt`.
+    /// Computes Hamming distance using XOR and population counts.
     #[inline(always)]
     pub fn hamming_distance(&self, other: &Self) -> u32 {
         let mut dist = 0u32;
-        // The compiler unrolls this loop and emits native x86_64 `popcnt` / aarch64 `cnt` instructions.
+        // Native instruction selection depends on the target and compiler settings.
         for i in 0..4 {
             dist += (self.0[i] ^ other.0[i]).count_ones();
         }
@@ -124,6 +121,12 @@ impl StopNciiEngine {
         lock.len()
     }
 
+    /// Whether no known fingerprints are loaded. Callers should refuse dispatch
+    /// when their policy requires a populated safety catalog.
+    pub fn is_empty(&self) -> bool {
+        self.count() == 0
+    }
+
     /// Evaluates a candidate 32-byte PDQ hash against all registered signatures.
     /// Returns `Ok(())` if clean, or `Err(StopNciiError::ProhibitedMediaMatch)`
     /// for immediate hot discard.
@@ -162,8 +165,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_threshold_boundary_and_invalid_length() {
+        let engine = StopNciiEngine::default();
+        assert!(engine.is_empty());
+        engine.register_signature(PdqHash([0; 4]));
+        assert!(!engine.is_empty());
+        assert!(engine
+            .evaluate(&PdqHash([(1u64 << 31) - 1, 0, 0, 0]))
+            .is_err());
+        assert!(engine
+            .evaluate(&PdqHash([(1u64 << 32) - 1, 0, 0, 0]))
+            .is_ok());
+        for size in [0, 31, 33] {
+            assert_eq!(
+                engine.evaluate_raw_bytes(&vec![0; size]),
+                Err(StopNciiError::InvalidHashLength(size))
+            );
+        }
+        let bytes = [0x5a; 32];
+        assert_eq!(PdqHash::from_bytes(&bytes).to_bytes(), bytes);
+    }
+
+    #[test]
     fn test_hamming_distance_exact_match() {
-        let hash = PdqHash([0xAAAAAAAAAAAAAAAA, 0x5555555555555555, 0x0F0F0F0F0F0F0F0F, 0xF0F0F0F0F0F0F0F0]);
+        let hash = PdqHash([
+            0xAAAAAAAAAAAAAAAA,
+            0x5555555555555555,
+            0x0F0F0F0F0F0F0F0F,
+            0xF0F0F0F0F0F0F0F0,
+        ]);
         assert_eq!(hash.hamming_distance(&hash), 0);
     }
 
@@ -193,10 +223,17 @@ mod tests {
         let res = engine.evaluate(&mutated_hash);
         assert!(res.is_err());
         match res.unwrap_err() {
-            StopNciiError::ProhibitedMediaMatch { min_distance, threshold, drop_code } => {
+            StopNciiError::ProhibitedMediaMatch {
+                min_distance,
+                threshold,
+                drop_code,
+            } => {
                 assert_eq!(min_distance, 10);
                 assert_eq!(threshold, 31);
-                assert_eq!(drop_code, DropReasonCode::DropReasonStopnciiPerceptualHashMatch);
+                assert_eq!(
+                    drop_code,
+                    DropReasonCode::DropReasonStopnciiPerceptualHashMatch
+                );
             }
             _ => panic!("Expected ProhibitedMediaMatch"),
         }

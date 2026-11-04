@@ -1,0 +1,108 @@
+2026-11-04 | version 0.5.0 | Linux x86_64 | Rust 1.99.1
+31 unit tests passed; doc-tests passed.
+
+$ cargo test --workspace
+   Compiling splinter-core v0.5.0 (/workspace/scratch/643823affe2d/work/SplinterBridge-main/crates/splinter-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.99s
+
+running 20 tests
+     Running unittests src/lib.rs (work/SplinterBridge-main/target/debug/deps/splinter_core-a0e1c562a4543fa4)
+test boundary_tests::opaque_references_are_stable_scoped_and_do_not_disclose_local_ids ... ok
+test boundary_tests::optional_public_fields_require_explicit_opt_in ... ok
+test boundary_tests::profile_fields_cannot_bypass_route_policy ... ok
+test boundary_tests::private_posts_and_disguised_profile_content_are_rejected ... ok
+test boundary_tests::media_validation_and_notices_apply_to_all_failures ... ok
+test boundary_tests::receiver_rejects_hidden_unknown_payload_fields_and_oversize ... ok
+test boundary_tests::receiver_binds_trust_to_origin_destination_and_key ... ok
+test boundary_tests::receiver_rechecks_content_and_both_endpoints_even_for_a_valid_signer ... ok
+test boundary_tests::receiver_must_explicitly_approve_optional_public_fields ... ok
+test identity::tests::test_blind_did_is_deterministic_and_irreversible ... ok
+test identity::tests::test_identity_input_validation_and_region_isolation ... ok
+test identity::tests::test_project_blind_profile_scrubs_pii ... ok
+test boundary_tests::unsupported_hardware_assertions_are_not_silently_trusted ... ok
+test boundary_tests::all_four_routes_enforce_policy_and_leave_the_local_event_intact ... ok
+test boundary_tests::public_fields_roundtrip_in_both_directions_for_public_and_private_accounts ... ok
+test boundary_tests::replies_resolve_federated_resources_without_shared_ids_or_keys ... ok
+test boundary_tests::receiver_rejects_removed_or_forged_notices_even_when_resigned ... ok
+test identity::tests::test_signature_and_verification_lifecycle ... ok
+test identity::tests::test_envelope_integrity ... ok
+test boundary_tests::receiver_rejects_internal_ids_invalid_author_and_private_content ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running unittests src/lib.rs (work/SplinterBridge-main/target/debug/deps/splinter_filter-0a0938cf52c0dfeb)
+
+running 6 tests
+test tests::interaction_matrix_is_symmetric_for_china_and_leaves_overseas_free ... ok
+test tests::test_cac_prohibited_terms_intercepted ... ok
+test tests::test_cyrillic_case_variants ... ok
+test tests::test_rkn_prohibited_terms_intercepted ... ok
+test tests::test_benign_content_passes_cac ... ok
+test tests::test_cross_border_isolation ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running unittests src/lib.rs (work/SplinterBridge-main/target/debug/deps/splinter_proto-172034c3a57fbfbc)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (work/SplinterBridge-main/target/debug/deps/splinter_safety-5238e33905b3b669)
+
+running 5 tests
+test tests::test_hamming_distance_differing_bits ... ok
+test tests::test_hamming_distance_exact_match ... ok
+test tests::test_stopncii_allows_clean_media ... ok
+test tests::test_stopncii_hot_discard_within_threshold ... ok
+test tests::test_threshold_boundary_and_invalid_length ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests splinter_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests splinter_filter
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests splinter_proto
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests splinter_safety
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+$ cargo fmt --all -- --check
+
+$ cargo clippy --workspace --all-targets --locked -- -D warnings
+   Compiling splinter-proto v0.5.0 (/workspace/scratch/643823affe2d/work/SplinterBridge-main/crates/splinter-proto)
+    Checking splinter-safety v0.5.0 (/workspace/scratch/643823affe2d/work/SplinterBridge-main/crates/splinter-safety)
+    Checking splinter-filter v0.5.0 (/workspace/scratch/643823affe2d/work/SplinterBridge-main/crates/splinter-filter)
+    Checking splinter-core v0.5.0 (/workspace/scratch/643823affe2d/work/SplinterBridge-main/crates/splinter-core)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.95s
+
+$ cargo build --release --locked
+   Compiling splinter-proto v0.5.0 (/workspace/scratch/643823affe2d/work/SplinterBridge-main/crates/splinter-proto)
+   Compiling splinter-safety v0.5.0 (/workspace/scratch/643823affe2d/work/SplinterBridge-main/crates/splinter-safety)
+   Compiling splinter-filter v0.5.0 (/workspace/scratch/643823affe2d/work/SplinterBridge-main/crates/splinter-filter)
+   Compiling splinter-core v0.5.0 (/workspace/scratch/643823affe2d/work/SplinterBridge-main/crates/splinter-core)
+    Finished `release` profile [optimized] target(s) in 1.03s
+
+$ cargo run -p splinter-core --example federate --locked
+This interaction connects an overseas service with a service in mainland China. China-route content restrictions apply, and some messages may be rejected. Conversations exclusively between overseas users do not use this China-specific filter.
+GlobalGdpr -> CnPiplCac: @example | Example | 42 followers | private=true
+This interaction connects an overseas service with a service in mainland China. China-route content restrictions apply, and some messages may be rejected. Conversations exclusively between overseas users do not use this China-specific filter.
+CnPiplCac -> GlobalGdpr: @example | Example | 42 followers | private=true
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running `target/debug/examples/federate`

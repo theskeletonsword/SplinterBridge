@@ -1,157 +1,323 @@
 # SplinterBridge
 
-> **Zero-Trust Server-to-Server (S2S) Partitioned Federation Engine for Sovereign Social Backends**  
-> *Connecting TikTok Global, Douyin China, and Sovereign Digital Realms without Cross-Border PII Leakage.*
+Rust libraries and a Protocol Buffers contract for server-to-server federation
+between independently operated social backends. Version 0.5.0, Apache-2.0.
+The protocol is platform-neutral: TikTok/Douyin, Meta products and other networks
+are possible integration examples, not dependencies or existing partnerships.
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Language](https://img.shields.io/badge/Language-Rust%202021-orange.svg)](https://www.rust-lang.org/)
-[![Status](https://img.shields.io/badge/Status-Core%20Engine%20Reference-green.svg)]()
+Copyright 2026 TheSkeletonSword (perex). See LICENSE and NOTICE.
 
----
+This is a reference implementation. It does not connect to TikTok or Douyin,
+and does not guarantee regulatory compliance, anonymity, or absence of personal data.
 
-## Copyright & License Notice
+## Implemented components
 
-```text
-Copyright 2026 TheSkeletonSword (perex)
+| Crate | Function |
+| --- | --- |
+| `splinter-proto` | Protocol messages and generated gRPC client/server interfaces |
+| `splinter-core` | Minimal profile projection, opaque references, outbound preparation, trusted inbound verification, Ed25519 signatures |
+| `splinter-filter` | Destination-specific literal keyword matching with Unicode lowercase handling |
+| `splinter-safety` | Local Hamming-distance comparison of supplied 256-bit fingerprints |
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+The facade crate `splinter-core` re-exports the other crates' APIs.
 
-    http://www.apache.org/licenses/LICENSE-2.0
+## Mutually blind backends and independent regional stores
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-```
+SplinterBridge is an open protocol for any social network. TikTok/Douyin, Meta
+products and other services are possible examples; the protocol is not tied to
+ByteDance or any other operator.
 
----
+**China and overseas application backends must remain mutually blind.** Neither
+backend may directly call, query, administer or inspect the other backend or its
+databases. They must not share database credentials, tables, replication streams,
+internal identity directories, private social graphs or a cross-region database
+join. Each region operates its own storage, identity verification, authentication,
+moderation and feed. An integration must not use the bridge as a tunnel into a
+remote backend or as an arbitrary database-query interface.
 
-## 1. Executive Architecture Overview
+Only dedicated regional gateways exchange explicitly authorized protocol events.
+Each gateway obtains an approved projection from its own local adapter, applies
+the route policy and signs the export. The receiving gateway validates it and
+hands an accepted projection to its own local adapter. Neither application
+backend receives direct access to the other. Any permitted cross-region network
+path must terminate at these gateways, not at domestic databases or internal
+application services. Deployment network controls and authorization must enforce
+this separation; the Rust libraries alone cannot establish it.
 
-Modern social network architectures face an existential dilemma: the global internet has fractured into incompatible regulatory regimes (the *Splinternet*):
-* **Western / Global (GDPR, CCPA, DSA):** Enforces rigorous privacy protections, prohibits unconstrained biometric and identity surveillance, and resists foreign state access.
-* **Mainland China (PIPL, Data Security Law, CAC):** Mandates strict localized real-name registration (*Shimingzhi*), domestic data localization, and strict ideological content governance.
-* **Russian Federation (152-FZ, RKN):** Imposes localized data storage and bans unauthorized external narratives.
+In this architecture, **blind** means no visibility into the opposite backend's
+private state, original account identifiers, database layout or internal service
+interfaces. The peer sees only the fields explicitly approved for federation,
+together with the gateway identity and routing metadata needed by the protocol.
+A gateway connection necessarily reveals its own endpoint; this is not a claim
+that communication itself is invisible or that the peers exchange no information.
 
-**SplinterBridge** is an open-source, high-concurrency S2S gateway protocol implemented in Rust. It enables mutual discovery, content federation, and social engagement between distinct sovereign backends (such as **TikTok Global** and **Douyin**) without violating any jurisdiction's legal mandates.
+Regional HMAC secrets, identity-verification records, credentials and mappings
+from federated pseudonyms to internal accounts must remain local. Shared profile
+and event fields must be minimized and reviewed by the local adapter. Public
+handles, names, avatar URLs and content can still identify people. Blind backend
+separation is not a cryptographic anonymity or zero-knowledge guarantee, and the
+current code does not validate every free-form field for sensitive information.
 
-```
-┌─────────────────────────────────┐                       ┌─────────────────────────────────┐
-│     Global / GDPR Cluster       │                       │      China / CAC Cluster        │
-│     (e.g., TikTok Global)       │                       │         (e.g., Douyin)          │
-│                                 │                       │                                 │
-│  [User DB: Pseudonymous Graph]  │                       │ [User DB: Shimingzhi Real-Name] │
-│                 │               │                       │                 │               │
-│                 ▼               │                       │                 ▼               │
-│     [Pre-flight Egress Filter]  │                       │     [Pre-flight Egress Filter]  │
-│      - CAC / RKN In-Memory Trie │                       │      - GDPR In-Memory Checks    │
-│      - StopNCII PDQ Popcnt      │                       │      - StopNCII PDQ Popcnt      │
-│                 │               │                       │                 │               │
-│                 ▼               │     Mutual TLS 1.3    │                 ▼               │
-│    [Origin Gateway Signer]      │◄═════════════════════►│   [Destination Gateway Verifier]│
-│      - Ed25519 Payload Sig      │   Zero-PII Envelope   │      - Ed25519 Validation       │
-│      - Regional Pepper HMAC     │   gRPC Protocol Buffers│     - Local Blind Mapping      │
-└─────────────────────────────────┘                       └─────────────────────────────────┘
-```
+The destination stores an accepted projection independently. It must not resolve
+a federated identifier by looking up the origin's database. Any local mapping
+and any later export decision remain under the owning regional backend's control.
 
----
+### Public profile visible across regions
 
-## 2. Core Architectural Invariants
+Public-profile visibility is reciprocal: an overseas user may see the following
+approved projection of a Chinese account, and a Chinese user may see the same
+fields of an overseas account. Backend blindness does not require hiding these
+public profiles.
 
-### 1. Zero-PII Overseas Verification
-* **Western Users:** Never upload government IDs, passports, or biometrics to foreign clusters. Proof-of-humanity relies on hardware-backed cryptographic enclave assertions (**FIDO2 / WebAuthn, Apple Secure Enclave, Android StrongBox**) or established reputation graph metrics.
-* **Chinese Users:** Mandatory real-name identity verification (*Shimingzhi*) remains strictly confined to domestic Mainland servers. No real-name data, national identification numbers, phone numbers, or resident identity records ever cross the gateway.
+| Visible information | Protocol field | Meaning |
+| --- | --- | --- |
+| Nickname / public handle | `handle` | Public account nickname, not its internal database ID |
+| Display name | `display_name` | Name published on the profile, not a transfer of the domestic verification record |
+| Follower count | `followers_count` | Aggregate number of followers, without the private follower graph |
+| Account visibility | `is_private` | `true`: private account; `false`: public account |
 
-### 2. Blind Identity Projection (Blind Mapping)
-Internal database identifiers are transformed into irreversible pseudonymous decentralized identifiers via HMAC-SHA256 initialized with regional secret peppers:
-$$\text{federated\_did} = \text{"did:splinter:"} \parallel \text{jurisdiction} \parallel \text{":"} \parallel \text{HMAC-SHA256}(\text{pepper}_{\text{region}}, \text{internal\_user\_id})$$
-The receiving cluster only observes:
-* `federated_did` (e.g., `did:splinter:global:e3b0c442...`)
-* Public handle (e.g., `@theskeletonsword`)
-* Display name (e.g., `perex`)
-* Aggregated followers and following counters
-* Visibility flags (`is_private`)
-* Cryptographic trust flags (`VerifiedBadgeType`)
+These fields exist in `SanitizedPublicProfile` and are populated by
+`project_blind_profile`, in either direction. Avatar, following count and badges
+are omitted by default. `project_blind_profile_with_options` requires explicit
+per-field opt-in for those extras. The receiving gateway also rejects extras
+unless its local `with_profile_options` configuration explicitly approves them. They are visible alongside the federated pseudonym;
+neither backend needs to query the other backend to display them.
+A public display name can itself identify a person, so this is an approved public
+projection rather than an anonymity guarantee. The schema also supports avatar,
+following count and verification badges; adapters must explicitly decide which
+additional fields are permitted and visible.
 
-### 3. Pre-flight Egress Interception (In-Memory)
-Before any cross-border packet touches the outbound network interface:
-* An in-memory Aho-Corasick automaton checks textual content against destination-specific regulatory catalogs (e.g., Cyberspace Administration of China historical and political sensitivities; Roskomnadzor banned extremist entities).
-* If a prohibited token is detected, the event is immediately aborted at the origin egress gateway with an explicit `DropReasonCode`.
-* **Sovereign Safety Guarantee:** The prohibited content remains fully accessible within the domestic global feed, but never crosses the border, protecting domestic users and preventing legal jeopardy for destination recipients.
+The public/private flag describes account visibility. Publishing that flag or
+its follower count does not grant access to private posts, private relationships
+or domestic identity records. The Rust boundary rejects content events from private accounts and only permits
+content-free profile synchronization for them. It does not implement access grants
+for authorized followers; platforms must integrate that separately before enabling
+private-content federation.
 
-### 4. Zero-Knowledge Digital Safety (StopNCII / CSAM)
-* Every media attachment is evaluated locally via perceptual hashing (**PDQ 256-bit** for images and **TMK** for video).
-* Autonomous in-memory Hamming distance matching uses hardware-accelerated bitwise population counts (`popcnt`).
-* Any media with $\text{HammingDistance}(\text{candidate}, \text{known}) \le 31$ is dropped in hot path before dispatch.
-* No raw images, personal media, or cross-border telemetry queries are sent to external third parties.
+### Local publication and route-specific export
 
----
+The domestic event is evaluated under its local rules and committed locally.
+`OutboundGateway::prepare` then checks each origin/destination pair independently
+and either returns a signed export envelope or an export error. It receives the
+event by immutable reference and has no database handle, deletion operation or
+domestic visibility operation. Domestic China-to-China interactions must also be
+assessed before local acceptance, as described in the matrix below.
 
-## 3. Threat Model & Mitigations
+For example, an overseas comment containing `Tiananmen` can remain on its
+originating platform and visible in an overseas-to-overseas interaction while
+its export to China is refused. Refusing that export must not remove the original
+comment or suppress an independently permitted overseas interaction. China-to-
+overseas interactions are checked as well; this is not a destination-only rule.
+The same separation applies to every integrating social network.
 
-| Threat Vector | Attack Scenario | SplinterBridge Mitigation |
-| :--- | :--- | :--- |
-| **Cross-Border PII Exfiltration** | Foreign cluster queries or subpoena requests user identity documents. | **Cryptographic Impossibility.** Raw IDs, emails, phone numbers, and IPs are never serialized into protobuf payloads. Regional HMAC peppers never leave sovereign HSM boundaries. |
-| **Man-in-the-Middle (MitM) & Spoofing** | Adversary intercepts cross-border federation line or injects forged posts. | **mTLS 1.3 + Ed25519 Payload Signatures.** Every event payload is digitally signed by the origin gateway private key and verified against public keys by the destination gateway. |
-| **Destination Legal Liability** | Western user posts content illegal in destination (e.g., 8964 in China). | **In-Memory Egress Pre-flight Interception.** Origin gateway filters and drops non-compliant egress traffic before border crossing, shielding remote recipients. |
-| **Replay & Sybil Attacks** | Malicious actor replays valid cross-border messages to spam clusters. | **Timestamp Windows & Monotonic Nonces.** Envelopes enforce a 60-second validity window, unique UUIDv4 event IDs, and nonces. |
-| **Child Sexual Abuse & NCII Distribution** | Bad actor attempts to cross-federate abusive media across sovereign borders. | **Zero-Knowledge PDQ Popcnt Matching.** Local StopNCII perceptual hash blocks intercept abusive media variations in <10 microseconds. |
+### Regulatory purpose and implementation scope
 
----
+The separation is intended to avoid direct cross-region backend and database
+coupling and support independent regional governance. A deployment involving
+China, the United States or Europe must assess its actual data flows, access
+rights and applicable requirements separately. This project does not conclude
+that a particular architecture necessarily triggers or avoids fines or sanctions
+for ByteDance, Meta or another operator. Mutually blind backends and content
+filters are architectural requirements of this design, not regulatory approval.
 
-## 4. Bilateral Benefits (ByteDance: TikTok Global vs. Douyin)
+There is no backend/database connection code in this reference implementation.
+Transport and network isolation remain deployment work. The Rust boundary now
+projects local records, validates exported fields and verifies received events
+against a locally provisioned peer key and region. Provisioning trust and deciding
+which public values are approved remain responsibilities of each local adapter.
 
-| Dimension | Status Quo (Hard Partition / Silos) | With SplinterBridge Federation Engine |
-| :--- | :--- | :--- |
-| **Regulatory Compliance (US/EU)** | Constant scrutiny regarding potential Chinese access to Western PII. | **Verifiable Zero-PII Guarantee.** Code audits prove zero PII leaves Western data centers. Hardware attestations replace ID requirements. |
-| **Regulatory Compliance (China CAC/PIPL)** | Fear that foreign unfiltered political dissent will permeate domestic Douyin. | **Automated Pre-Flight Sovereign Egress.** Origin gateways filter non-compliant political content in RAM prior to cross-border dispatch. |
-| **Network Effects & Global Reach** | Cross-border cultural exchange is completely severed; creators cannot reach each other. | **Unified Global Culture Engine.** A creator in Milan or New York can federate viral trends, music, and comments with creators in Shanghai seamlessly. |
-| **Commercial & E-Commerce Upside** | Cross-border live-stream shopping and brand sponsorship fragmented across apps. | **Sovereign-Sanitized Merchant Handles.** Global and Chinese creators can interact and co-host federated spaces with localized checkout gateways. |
-| **Infrastructure Overhead** | Maintaining completely independent, duplicated product and discovery features. | **Standardized Protobuf & gRPC Backbone.** Shared, open-source S2S protocol reduces bespoke bridging engineering costs. |
+## Interaction policy matrix
 
----
+The participating backend jurisdictions determine the rule, not the users'
+nationality, language, device locale or a client-supplied flag.
 
-## 5. Repository Structure
+| Origin | Recipient | China keyword filter | Cross-region notice |
+| --- | --- | --- | --- |
+| Overseas | Overseas | No | No |
+| Overseas | China | Yes | Yes |
+| China | Overseas | Yes | Yes |
+| China | China | Yes | No cross-region notice needed |
 
-```text
-SplinterBridge/
-├── Cargo.toml                      # Workspace manifest
-├── README.md                       # Comprehensive architecture & threat model
-├── proto/
-│   └── splinter_bridge.proto       # Protocol Buffers v3 contract
-└── crates/
-    ├── splinter-proto/             # Tonic/Prost compiled stubs & build.rs
-    ├── splinter-filter/            # CAC & RKN in-memory Egress Pre-flight engine
-    ├── splinter-safety/            # StopNCII 256-bit PDQ Hamming popcnt engine
-    └── splinter-core/              # Blind DID (HMAC-SHA256) & Ed25519 signer
-```
+Here Overseas means the `GlobalGdpr` backend profile. Other destination policies,
+such as the existing Russia example catalog, remain independent.
 
----
+`assess_interaction(origin, destination, text)` applies this matrix and returns
+both notice codes and the content result. Use it before opening the composer
+(with empty text) and again at submission. In particular **China → Overseas**
+is restricted just like **Overseas → China**; checking only the destination
+would incorrectly allow the former. Domestic China → China adapters must call
+this assessment before accepting a local interaction, since the export helper
+cannot change or enforce a domestic database's moderation policy.
 
-## 6. Quickstart & Building
+`OutboundGateway::prepare` uses this assessment. Accepted envelopes carry
+`policy_notices`, included in their signature. Policy rejections expose the same
+codes through `OutboundError::policy_notices()`. The response schema also has a
+notice field for future service implementations. There is no frontend in this
+repository: adapters must localize and display notices on both sides before the
+interaction; notice codes alone cannot force a third-party app to display UI.
+The English interaction policy and suggested disclaimer are in INTERACTION_POLICY.md.
 
-### Prerequisites
-* Rust 1.75+ (Cargo)
-* `protobuf-compiler` (`protoc`)
+This route policy leaves the overseas original event intact. It must not be
+used to retroactively filter unrelated Overseas → Overseas conversations.
+
+## Executable local boundary
+
+Use `OutboundGateway::prepare_local(destination, raw_profile, pepper, draft)`
+to construct a minimal public profile from local records. Raw profiles and drafts
+are not serializable wire messages. The method derives opaque event/resource
+references instead of copying local database IDs. `resource_id` identifies the
+published post/comment projection separately from its event ID; receivers index
+it locally. `target_resource_id` identifies the parent of a reply or interaction.
+A reply can therefore point at an imported projection without a remote DB query. Target references can be either
+a local resource to project or an already federated resource. Regional HMAC
+secrets remain at the origin, and no remote lookup is required by the receiver. Reference digests use HMAC-SHA256
+with the domain `splinterbridge:reference:v1\0` and length-prefixed kind, region
+and local ID, separate from the account DID derivation.
+
+`prepare` remains an advanced API for pre-approved projections. Both methods
+validate event type, regional DID shape, opaque reference shapes, profile field
+limits, private-account restrictions, route policy and media fingerprints.
+They filter profile text as well as event text. Notices accompany all preparation
+errors on a recognized China cross-region route, including identity/media errors.
+
+`InboundGateway::accept` requires a `TrustedGateway` configured locally with key
+ID, public key and origin jurisdiction. It checks the receiving jurisdiction,
+verifies the envelope signature, decodes a bounded payload, rejects non-canonical
+or unknown payload fields and repeats the content checks. Notice codes must match
+the route, even for a valid signer. Unsupported hardware assertions are rejected,
+not accepted as verified. Accepted data is a public event projection, with no
+remote database handle or internal ID mapping.
+
+Run the local, data-only demonstration:
 
 ```bash
-# Clone the repository
-git clone https://github.com/TheSkeletonSword/SplinterBridge.git
-cd SplinterBridge
-
-# Compile the entire workspace in release mode
-cargo build --release
-
-# Run the comprehensive cryptographic and safety test suite
-cargo test --workspace
+cargo run -p splinter-core --example federate --locked
 ```
 
----
+It demonstrates reciprocal public-profile visibility for private accounts without
+exporting their posts. It generates ephemeral keys and does not open a network
+connection. `interaction_notice_en` supplies suggested English notice copy for
+adapters; actual UI presentation still belongs to the platform.
 
-## 7. Authors & Attribution
+This boundary cannot determine whether arbitrary user text contains personal data,
+whether a trusted origin's public claims are truthful, or whether an operator has
+configured network rules correctly. It is not a running federation service.
 
-Designed and architected by **TheSkeletonSword** (`perex`). Released under the Apache 2.0 open-source license.
-Contributions, security audits, and formal enterprise integration whitepapers are welcomed.
+## Build and verify
+
+Use a current stable Rust toolchain with a native linker/C compiler. The included
+Cargo.lock records the tested dependency resolution. Rust 1.99.1 was used locally;
+older Rust versions have not been verified.
+
+```bash
+cargo build --release --locked
+cargo test --workspace --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo fmt --all -- --check
+```
+
+The build uses `protoc-bin-vendored` when `PROTOC` is unset. Set `PROTOC` to an
+explicit compiler path to override it. Initial builds need access to Cargo's
+registry. No system-wide protobuf compiler installation is required on supported
+vendored platforms.
+
+## Identity and signatures
+
+`derive_federated_did` computes HMAC-SHA256 over
+`jurisdiction_code || ":" || internal_user_id`, using a regional secret, and
+returns `did:splinter:<region>:<hex_digest>`. It rejects empty IDs, unspecified
+jurisdictions and secrets shorter than 32 bytes. Use cryptographically random
+secrets: length checks do not establish entropy. Secret buffers owned by
+`RegionalPepper` are cleared on drop via `zeroize`; caller-owned source buffers
+remain the caller's responsibility. This implementation stores keys in process
+memory, not an HSM.
+
+`project_blind_profile` omits dedicated email, phone, internal IP, national-ID
+and internal-ID fields. Public names, handles, avatar URLs and arbitrary event
+text may still identify people or contain sensitive data. A pseudonym can be
+linked across events. Apply consent, field validation, retention rules and data
+minimization in the integrating backend.
+
+`sign_profile` and `verify_profile` share a single canonical serializer. All
+current profile fields are covered, including avatar and verification badges.
+The signature input is the byte prefix `splinterbridge:profile:v2\0` (ending in
+one NUL byte) followed by compact serde_json output of the canonical struct.
+Field order is fixed by that struct; this is not a general JSON canonicalization
+standard. Verifiers use Ed25519 strict verification.
+
+`sign_envelope` and `verify_envelope` cover the entire known envelope, including
+payload, routing, gateway key ID and attestation. The signature input is
+`splinterbridge:envelope:v1\0` followed by Prost encoding of a cloned envelope
+with `ed25519_signature` cleared. Re-encoding known fields defines the format;
+unknown protobuf fields are not preserved. Schema evolution needs a coordinated
+signature-format review. Verification authenticates the key's statement; it
+does not prove the signer is authorized or a hardware assertion is valid.
+Resolve the key ID through a trusted registry and enforce local destination,
+size limits and validation separately.
+
+### Migration from earlier releases
+
+In 0.5.0, `interaction_notice_es` is renamed to `interaction_notice_en`, and its
+message is English. Update API call sites. The policy document is now
+`INTERACTION_POLICY.md`. Policy matching terms and non-English test fixtures
+remain unchanged because they are protocol data, not documentation or UI copy.
+No wire field numbers or signature formats change between 0.4.0 and 0.5.0.
+
+Old profile signatures are deliberately incompatible with v2. Upgrade both peers
+and re-sign profiles; do not fall back to accepting signatures that omit badges
+and avatars. Existing protobuf field numbers are unchanged; 0.3.0 adds `policy_notices` to
+envelopes (field 7) and responses (field 6). Upgrade peers together: signatures
+include envelope notices, which older generated schemas do not retain.
+In 0.4.0 `OutboundError` is a struct with `reason: OutboundRejection` and
+`notices`; `policy_notices()` and `drop_reason_code()` remain available.
+`project_blind_profile` now defaults to the minimal public fields; callers needing
+extras must opt in. The boundary requires HMAC-shaped regional DIDs and opaque
+`urn:splinter:event:<region>:<hex>` / `urn:splinter:resource:<region>:<hex>`
+references. Use `prepare_local` to derive them from local IDs. 0.4.0 also adds payload field 9, `resource_id`, and requires it for posts/comments;
+profile syncs cannot carry it or content. Comment/engagement targets must be valid
+federated resource references. This schema addition changes envelope signing bytes,
+so peers must upgrade together. Existing arbitrary
+IDs must be migrated locally; the remote backend is not queried to resolve them.
+Envelope signing
+now uses the full-envelope format above instead of the old payload-only design.
+The generated Rust jurisdiction variants are `GlobalGdpr`, `CnPiplCac`,
+`Ru152Fz` and `Unspecified`; `DropReasonCode` and `VerifiedBadgeType` keep their
+existing value prefixes.
+
+## Filtering and media safety
+
+The existing example CAC/RKN keyword catalogs are retained. The low-level `check_text` checks one jurisdiction's catalog. The higher-level
+`assess_interaction` also applies China rules when China is the origin, and
+returns an error when either endpoint jurisdiction is unspecified.
+Unicode lowercasing fixes Cyrillic uppercase matching. It is a literal substring
+filter, not a semantic classifier: false positives, alternative spellings,
+Unicode confusables and omissions remain possible. The example lists are not
+complete or authoritative regulatory catalogs. Domestic visibility is controlled
+by the integrating backend, not this library.
+
+`StopNciiEngine` starts with an empty local catalog. Populate it from a trusted,
+authorized source before relying on it; `is_empty()` can enforce that policy.
+The low-level engine permits every correctly sized hash with an empty catalog;
+`OutboundGateway::prepare` instead rejects media exports until a catalog is loaded. The engine compares supplied
+fingerprints in a linear scan, using a default distance threshold of 31 inclusive.
+It does not calculate PDQ from images, implement TMK, obtain StopNCII/CSAM feeds,
+or establish that a caller-supplied hash belongs to the media. A real integration
+must derive hashes from the actual media in a trusted path. Local comparison is
+not a cryptographic zero-knowledge proof. There is no measured latency guarantee.
+
+## Integration work still required
+
+There is no running gRPC service, mTLS configuration, transport dispatch loop,
+replay cache or timestamp-window enforcement, hardware-attestation verifier,
+persistent storage, rate limiting or connection to existing social platforms.
+Signatures alone do not prevent replay. These components must be implemented
+and reviewed before production deployment. Use `OutboundGateway::prepare_local` (or the advanced `prepare`) to apply the
+current projection, text and media checks before signing. Calling the lower-level signer alone bypasses those checks. The helper
+rejects missing authors, inconsistent author jurisdictions, unspecified destinations,
+invalid fingerprints, media exports with an empty catalog and unsupported TMK
+hashes. It checks field shapes and catalog terms but cannot establish that
+free-form profile values contain no sensitive data, or that a policy decision
+matches every rule a regulator might impose. The example keyword lists remain
+incomplete; arbitrary disallowed content cannot be identified by those lists alone.
+
+See CHANGELOG.md for the changes and validation record.

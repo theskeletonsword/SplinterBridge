@@ -1,35 +1,48 @@
-# AGENTS.md
+# Repository guidance
 
-Guidance for AI coding agents working in this repository. See `README.md` for the design/threat model and `CLAUDE.md` for a longer architecture walkthrough.
+Read README.md and CHANGELOG.md for current scope and migration notes.
 
-SplinterBridge (Rust 2021 workspace, ref impl of a zero-trust S2S federation gateway between social backends under incompatible regulatory regimes: Global/GDPR, China CAC/PIPL, Russia RKN). Code changes must preserve four invariants: no PII in cross-border payloads; identities cross borders only as blind HMAC-based `federated_did`s; egress text is filtered against the *destination* jurisdiction's catalog at the origin; media is checked against StopNCII PDQ hashes in memory (Hamming ≤ 31), never via third-party calls.
+## Invariants
 
-## Commands
-
-- `protoc` (`protobuf-compiler`) must be on PATH — `splinter-proto/build.rs` regenerates stubs via `tonic-build` on every build of that crate. Without it, `cargo check`/`build` fails fast with `Could not find \`protoc\``; fix with `apt-get install protobuf-compiler` (Debian) or by pointing the `PROTOC` env var at an existing protoc binary.
-- `cargo build --release` and `cargo test --workspace` are the README quickstart; there is no CI config in-repo, so local cargo is the only verification.
-- One crate: `cargo test -p splinter-filter`. One test by name filter: `cargo test -p splinter-core test_signature`.
-- Lint/format: `cargo clippy --workspace --all-targets`, `cargo fmt --all`.
-- Tests are inline `#[cfg(test)] mod tests` in each source file; there is no `tests/` directory.
+- Dedicated private profile fields must stay out of profile projection.
+- Regional HMAC secrets stay local; route policy is checked at origin. China rules apply when either endpoint is
+  China; two global endpoints do not inherit them. Cross-region China interactions
+  return notices on acceptance and policy rejection.
+- Media comparison is local; no external media requests in the matching path.
+- Do not claim these libraries guarantee anonymity or legal compliance.
 
 ## Architecture
 
-- Dependency direction: `splinter-proto` ← (`splinter-filter`, `splinter-safety`) ← `splinter-core`. `splinter-core/src/lib.rs` is a facade re-exporting every other crate's public API — downstream code should depend only on `splinter-core`.
-- `proto/splinter_bridge.proto` (`splinterbridge.v1`) is the single source of truth for wire types and the gRPC service; `splinter-proto` only includes/re-exports the generated stubs.
-- Dependency versions are pinned once in the root `Cargo.toml` `[workspace.dependencies]`; member crates reference them with `foo.workspace = true`. Add new deps at the root first.
+The facade is `splinter-core`; it depends on `splinter-proto`, `splinter-filter`
+and `splinter-safety`. The `.proto` contract is the wire source of truth.
+Dependencies are declared in root Cargo.toml and inherited by members.
+Tests live alongside source in `#[cfg(test)]` modules.
 
-## Gotchas
+## Commands
 
-- **Prost enum naming:** generated variants keep the enum prefix, CamelCased (`JURISDICTION_CN_PIPL_CAC` → `Jurisdiction::JurisdictionCnPiplCac`), and enum / repeated-enum message fields are stored as `i32` (hence the `as i32` casts in `identity.rs`).
-- **Signatures do not cover everything.** `sign_profile`/`verify_profile` sign a serde_json `CanonicalProfilePayload` (not protobuf bytes) that intentionally omits `public_avatar_url` and `badges` — those fields are not tamper-protected. Signer and verifier each build that struct separately; any change must be mirrored in both places or verification breaks silently.
-- **Filter rule alignment:** `PreflightEgressFilter` builds one ASCII-case-insensitive `LeftmostFirst` Aho-Corasick automaton per destination jurisdiction from hard-coded `RuleMeta` lists in `new()`; match indices index into that same `Vec<RuleMeta>`, so the vec is the single source for both. Destination `JurisdictionGlobalGdpr` is unfiltered; `JurisdictionUnspecified` returns an error.
-- **`RegionalPepper::new_test()` is `#[cfg(test)]` only** — unavailable outside tests.
-- Error convention: `thiserror` enums; filter/safety errors expose `drop_reason_code()` → proto `DropReasonCode`, the value callers put in `FederatedEventResponse.drop_reason`.
+```bash
+cargo build --release --locked
+cargo test --workspace --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo fmt --all -- --check
+```
 
-## Design intent vs. implemented reality
+The build uses vendored protoc unless PROTOC is set. Prost strips the
+`Jurisdiction` prefix from jurisdiction values, but `DropReasonCode` and
+`VerifiedBadgeType` values retain `DropReason` and `VerifiedBadge` prefixes.
 
-The README describes more than exists: there is no gRPC server/client, no mTLS setup, no envelope signature over `payload_bytes`, no replay/nonce/timestamp-window checks, no hardware-attestation verification, no TMK video hashing. `tokio`, `tonic` transport, `rustls`, `aws-lc-rs`, and `tracing-subscriber` are declared but largely unused. Treat the README as design intent, not current behavior.
+Profile signature v2 includes every current profile field via one shared
+serializer and a versioned domain prefix. Envelope signatures bind all known
+fields except the signature itself. Changes to either format require coordinated
+migration and tampering tests. `OutboundGateway::prepare_local` projects local records and signs approved exports.
+The advanced `prepare` validates pre-built projections. Neither modifies the domestic
+event. Call it per destination after committing the local event. Platform adapters
+and regional databases remain independent. There is no
+replay protection, hardware validation or transport security implementation.
+Filter matching uses lowercased Unicode text with literal example catalogs.
+The media catalog starts empty; matching uses an inclusive default threshold 31.
 
-## Environment
-
-The repo lives on a WSL filesystem — run cargo from inside WSL/Linux, not from Windows against the UNC path.
+`InboundGateway::accept` verifies locally configured peer key/region/destination,
+canonical bounded payloads, private-account policy and route notice consistency.
+No remote database lookup is performed. Raw profiles redact Debug output; profile
+extras require explicit opt-in. See the migration section for reference formats.

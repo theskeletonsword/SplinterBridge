@@ -1,15 +1,17 @@
 //! SplinterBridge Blind Identity Projection and Cryptographic Attestation.
 //!
-//! Enforces Zero-PII by mapping private internal database identifiers into
-//! irreversible pseudonymous decentralized identifiers (`federated_did`) via
+//! Maps private internal database identifiers into
+//! pseudonymous decentralized identifiers (`federated_did`) via
 //! HMAC-SHA256 with regional pepper keys.
 //!
 //! Packages sanitized public profiles and generates Ed25519 signatures for
 //! authentic cross-border gateway verification.
 
-use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use hmac::{Hmac, Mac};
+use prost::Message;
 use sha2::Sha256;
+use splinter_proto::FederatedEventEnvelope;
 use splinter_proto::{Jurisdiction, SanitizedPublicProfile, VerifiedBadgeType};
 use thiserror::Error;
 
@@ -20,6 +22,12 @@ type HmacSha256 = Hmac<Sha256>;
 pub enum IdentityError {
     #[error("HMAC initialization failed: key length or structure invalid")]
     HmacInitError,
+
+    #[error("Regional pepper must contain at least 32 bytes")]
+    WeakPepper,
+
+    #[error("Internal user ID must not be empty")]
+    EmptyUserId,
 
     #[error("Ed25519 signature verification failed: signature does not match canonical payload")]
     InvalidSignature,
@@ -34,33 +42,58 @@ pub enum IdentityError {
     UnsupportedJurisdiction(Jurisdiction),
 }
 
-/// Secret regional cryptographic pepper stored strictly inside the sovereign gateway's HSM/KMS.
+/// Secret regional pepper owned in process memory and cleared on drop.
 /// Crucial invariant: regional peppers NEVER cross sovereign borders.
 #[derive(Clone)]
 pub struct RegionalPepper {
-    key_bytes: Vec<u8>,
+    key_bytes: zeroize::Zeroizing<Vec<u8>>,
 }
 
 impl RegionalPepper {
     /// Constructs a regional pepper from raw secret bytes.
     pub fn new(key: &[u8]) -> Self {
         Self {
-            key_bytes: key.to_vec(),
+            key_bytes: zeroize::Zeroizing::new(key.to_vec()),
         }
+    }
+
+    pub(crate) fn reference_digest(
+        &self,
+        kind: &str,
+        region: &str,
+        local_id: &str,
+    ) -> Result<String, IdentityError> {
+        if self.key_bytes.len() < 32 {
+            return Err(IdentityError::WeakPepper);
+        }
+        if local_id.trim().is_empty() {
+            return Err(IdentityError::EmptyUserId);
+        }
+        let mut mac = HmacSha256::new_from_slice(&self.key_bytes)
+            .map_err(|_| IdentityError::HmacInitError)?;
+        // This domain cannot equal the jurisdiction-prefixed account DID input.
+        mac.update(b"splinterbridge:reference:v1\0");
+        for part in [kind, region, local_id] {
+            mac.update(&(part.len() as u64).to_be_bytes());
+            mac.update(part.as_bytes());
+        }
+        Ok(hex::encode(mac.finalize().into_bytes()))
     }
 
     /// Helper for testing with secure pseudo-random seeds.
     #[cfg(test)]
     pub fn new_test() -> Self {
         Self {
-            key_bytes: b"splinterbridge-regional-pepper-test-secret-key-32b".to_vec(),
+            key_bytes: zeroize::Zeroizing::new(
+                b"splinterbridge-regional-pepper-test-secret-key-32b".to_vec(),
+            ),
         }
     }
 }
 
 /// Raw internal user model resident strictly within the domestic cluster database.
 /// Contains private data (PII) that MUST NOT cross sovereign boundaries.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RawInternalUserProfile {
     pub internal_user_id: String,
     pub national_id_hash: Option<String>, // e.g. China Shimingzhi real-name compliance
@@ -76,6 +109,20 @@ pub struct RawInternalUserProfile {
     pub badges: Vec<VerifiedBadgeType>,
 }
 
+impl std::fmt::Debug for RawInternalUserProfile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("RawInternalUserProfile { [REDACTED] }")
+    }
+}
+
+/// Explicit opt-in for fields outside nickname, display name, followers and visibility.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PublicProfileOptions {
+    pub avatar: bool,
+    pub following_count: bool,
+    pub badges: bool,
+}
+
 /// Generates an immutable, non-reversible `federated_did` using HMAC-SHA256 with regional pepper.
 ///
 /// Output format: `did:splinter:<jurisdiction_code>:<hex_digest>`
@@ -84,17 +131,23 @@ pub fn derive_federated_did(
     jurisdiction: Jurisdiction,
     pepper: &RegionalPepper,
 ) -> Result<String, IdentityError> {
+    if pepper.key_bytes.len() < 32 {
+        return Err(IdentityError::WeakPepper);
+    }
+    if internal_user_id.is_empty() {
+        return Err(IdentityError::EmptyUserId);
+    }
     let jur_code = match jurisdiction {
-        Jurisdiction::JurisdictionGlobalGdpr => "global",
-        Jurisdiction::JurisdictionCnPiplCac => "cn",
-        Jurisdiction::JurisdictionRu152Fz => "ru",
-        Jurisdiction::JurisdictionUnspecified => {
+        Jurisdiction::GlobalGdpr => "global",
+        Jurisdiction::CnPiplCac => "cn",
+        Jurisdiction::Ru152Fz => "ru",
+        Jurisdiction::Unspecified => {
             return Err(IdentityError::UnsupportedJurisdiction(jurisdiction))
         }
     };
 
-    let mut mac = HmacSha256::new_from_slice(&pepper.key_bytes)
-        .map_err(|_| IdentityError::HmacInitError)?;
+    let mut mac =
+        HmacSha256::new_from_slice(&pepper.key_bytes).map_err(|_| IdentityError::HmacInitError)?;
 
     mac.update(jur_code.as_bytes());
     mac.update(b":");
@@ -106,12 +159,21 @@ pub fn derive_federated_did(
     Ok(format!("did:splinter:{}:{}", jur_code, digest_hex))
 }
 
-/// Projects a domestic user profile into a clean, zero-PII sanitized profile.
+/// Projects the four approved public fields and a pseudonymous identifier.
 /// Drops email, phone, IP, and real-name Shimingzhi data before cross-border transit.
 pub fn project_blind_profile(
     raw: &RawInternalUserProfile,
     jurisdiction: Jurisdiction,
     pepper: &RegionalPepper,
+) -> Result<SanitizedPublicProfile, IdentityError> {
+    project_blind_profile_with_options(raw, jurisdiction, pepper, PublicProfileOptions::default())
+}
+
+pub fn project_blind_profile_with_options(
+    raw: &RawInternalUserProfile,
+    jurisdiction: Jurisdiction,
+    pepper: &RegionalPepper,
+    options: PublicProfileOptions,
 ) -> Result<SanitizedPublicProfile, IdentityError> {
     let federated_did = derive_federated_did(&raw.internal_user_id, jurisdiction, pepper)?;
 
@@ -119,25 +181,70 @@ pub fn project_blind_profile(
         federated_did,
         handle: raw.handle.clone(),
         display_name: raw.display_name.clone(),
-        public_avatar_url: raw.avatar_url.clone(),
+        public_avatar_url: if options.avatar {
+            raw.avatar_url.clone()
+        } else {
+            String::new()
+        },
         followers_count: raw.followers_count,
-        following_count: raw.following_count,
+        following_count: if options.following_count {
+            raw.following_count
+        } else {
+            0
+        },
         is_private: raw.is_private,
-        badges: raw.badges.iter().map(|b| *b as i32).collect(),
+        badges: if options.badges {
+            raw.badges.iter().map(|b| *b as i32).collect()
+        } else {
+            Vec::new()
+        },
         origin_jurisdiction: jurisdiction as i32,
     })
 }
 
 /// Canonical payload representation for deterministic Ed25519 signature computation.
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
+#[derive(serde::Serialize, Debug)]
 struct CanonicalProfilePayload<'a> {
     federated_did: &'a str,
     handle: &'a str,
+    public_avatar_url: &'a str,
+    badges: &'a [i32],
     display_name: &'a str,
     followers_count: u64,
     following_count: u64,
     is_private: bool,
     origin_jurisdiction: i32,
+}
+
+impl<'a> From<&'a SanitizedPublicProfile> for CanonicalProfilePayload<'a> {
+    fn from(profile: &'a SanitizedPublicProfile) -> Self {
+        Self {
+            federated_did: &profile.federated_did,
+            handle: &profile.handle,
+            public_avatar_url: &profile.public_avatar_url,
+            badges: &profile.badges,
+            display_name: &profile.display_name,
+            followers_count: profile.followers_count,
+            following_count: profile.following_count,
+            is_private: profile.is_private,
+            origin_jurisdiction: profile.origin_jurisdiction,
+        }
+    }
+}
+
+fn profile_signing_bytes(profile: &SanitizedPublicProfile) -> Result<Vec<u8>, serde_json::Error> {
+    let mut bytes = b"splinterbridge:profile:v2\0".to_vec();
+    bytes.extend(serde_json::to_vec(&CanonicalProfilePayload::from(profile))?);
+    Ok(bytes)
+}
+
+// Sign the complete envelope except its signature, including routing and attestation.
+fn envelope_signing_bytes(envelope: &FederatedEventEnvelope) -> Vec<u8> {
+    let mut unsigned = envelope.clone();
+    unsigned.ed25519_signature.clear();
+    let mut bytes = b"splinterbridge:envelope:v1\0".to_vec();
+    bytes.extend(unsigned.encode_to_vec());
+    bytes
 }
 
 /// Origin Gateway cryptographic signing agent.
@@ -151,6 +258,16 @@ impl GatewaySigner {
         Self { signing_key }
     }
 
+    /// Signs the full envelope, replacing any previous signature.
+    /// This authenticates bytes, but does not validate content, freshness or trust.
+    pub fn sign_envelope(&self, envelope: &mut FederatedEventEnvelope) {
+        envelope.ed25519_signature = self
+            .signing_key
+            .sign(&envelope_signing_bytes(envelope))
+            .to_bytes()
+            .to_vec();
+    }
+
     /// Returns the associated public verifying key.
     pub fn verifying_key(&self) -> VerifyingKey {
         self.signing_key.verifying_key()
@@ -158,17 +275,7 @@ impl GatewaySigner {
 
     /// Produces a deterministic Ed25519 digital signature over a sanitized profile projection.
     pub fn sign_profile(&self, profile: &SanitizedPublicProfile) -> Result<Vec<u8>, IdentityError> {
-        let canonical = CanonicalProfilePayload {
-            federated_did: &profile.federated_did,
-            handle: &profile.handle,
-            display_name: &profile.display_name,
-            followers_count: profile.followers_count,
-            following_count: profile.following_count,
-            is_private: profile.is_private,
-            origin_jurisdiction: profile.origin_jurisdiction,
-        };
-
-        let serialized = serde_json::to_vec(&canonical)?;
+        let serialized = profile_signing_bytes(profile)?;
         let signature = self.signing_key.sign(&serialized);
         Ok(signature.to_bytes().to_vec())
     }
@@ -178,6 +285,20 @@ impl GatewaySigner {
 pub struct GatewayVerifier;
 
 impl GatewayVerifier {
+    /// Verifies integrity using a key from the caller's trusted registry.
+    /// Callers must separately enforce destination, freshness, replay protection,
+    /// payload limits, policy checks and hardware attestation validity.
+    pub fn verify_envelope(
+        public_key_bytes: &[u8; 32],
+        envelope: &FederatedEventEnvelope,
+    ) -> Result<(), IdentityError> {
+        let key = VerifyingKey::from_bytes(public_key_bytes)?;
+        let signature = Signature::from_slice(&envelope.ed25519_signature)
+            .map_err(|_| IdentityError::InvalidSignature)?;
+        key.verify_strict(&envelope_signing_bytes(envelope), &signature)
+            .map_err(|_| IdentityError::InvalidSignature)
+    }
+
     /// Validates an incoming sanitized profile against the origin gateway's public verifying key.
     pub fn verify_profile(
         public_key_bytes: &[u8; 32],
@@ -185,22 +306,12 @@ impl GatewayVerifier {
         signature_bytes: &[u8],
     ) -> Result<(), IdentityError> {
         let verifying_key = VerifyingKey::from_bytes(public_key_bytes)?;
-        let signature = Signature::from_slice(signature_bytes)
-            .map_err(|_| IdentityError::InvalidSignature)?;
+        let signature =
+            Signature::from_slice(signature_bytes).map_err(|_| IdentityError::InvalidSignature)?;
 
-        let canonical = CanonicalProfilePayload {
-            federated_did: &profile.federated_did,
-            handle: &profile.handle,
-            display_name: &profile.display_name,
-            followers_count: profile.followers_count,
-            following_count: profile.following_count,
-            is_private: profile.is_private,
-            origin_jurisdiction: profile.origin_jurisdiction,
-        };
-
-        let serialized = serde_json::to_vec(&canonical)?;
+        let serialized = profile_signing_bytes(profile)?;
         verifying_key
-            .verify(&serialized, &signature)
+            .verify_strict(&serialized, &signature)
             .map_err(|_| IdentityError::InvalidSignature)?;
 
         Ok(())
@@ -213,12 +324,65 @@ mod tests {
     use rand::rngs::OsRng;
 
     #[test]
+    fn test_envelope_integrity() {
+        let signer = GatewaySigner::new(SigningKey::generate(&mut OsRng));
+        let key = signer.verifying_key().to_bytes();
+        let mut envelope = FederatedEventEnvelope {
+            payload_bytes: b"event".to_vec(),
+            origin_jurisdiction: Jurisdiction::GlobalGdpr as i32,
+            destination_jurisdiction: Jurisdiction::CnPiplCac as i32,
+            origin_gateway_key_id: "trusted-origin".into(),
+            ..Default::default()
+        };
+        signer.sign_envelope(&mut envelope);
+        assert!(GatewayVerifier::verify_envelope(&key, &envelope).is_ok());
+        let mut changed = envelope.clone();
+        changed.payload_bytes.push(0);
+        assert!(GatewayVerifier::verify_envelope(&key, &changed).is_err());
+        changed = envelope.clone();
+        changed.destination_jurisdiction = Jurisdiction::Ru152Fz as i32;
+        assert!(GatewayVerifier::verify_envelope(&key, &changed).is_err());
+        changed = envelope.clone();
+        changed.origin_gateway_key_id.push('x');
+        assert!(GatewayVerifier::verify_envelope(&key, &changed).is_err());
+        changed = envelope.clone();
+        changed.humanity_attestation = Some(Default::default());
+        assert!(GatewayVerifier::verify_envelope(&key, &changed).is_err());
+        let wrong_key = SigningKey::generate(&mut OsRng).verifying_key().to_bytes();
+        assert!(GatewayVerifier::verify_envelope(&wrong_key, &envelope).is_err());
+    }
+
+    #[test]
+    fn test_identity_input_validation_and_region_isolation() {
+        let pepper = RegionalPepper::new_test();
+        assert!(matches!(
+            derive_federated_did(
+                "u",
+                Jurisdiction::GlobalGdpr,
+                &RegionalPepper::new(&[0; 31])
+            ),
+            Err(IdentityError::WeakPepper)
+        ));
+        assert!(matches!(
+            derive_federated_did("", Jurisdiction::GlobalGdpr, &pepper),
+            Err(IdentityError::EmptyUserId)
+        ));
+        assert!(matches!(
+            derive_federated_did("u", Jurisdiction::Unspecified, &pepper),
+            Err(IdentityError::UnsupportedJurisdiction(_))
+        ));
+        let global = derive_federated_did("u", Jurisdiction::GlobalGdpr, &pepper).unwrap();
+        let cn = derive_federated_did("u", Jurisdiction::CnPiplCac, &pepper).unwrap();
+        assert_ne!(global.rsplit(':').next(), cn.rsplit(':').next());
+    }
+
+    #[test]
     fn test_blind_did_is_deterministic_and_irreversible() {
         let pepper = RegionalPepper::new_test();
         let internal_id = "user_uuid_948201_internal";
 
-        let did1 = derive_federated_did(internal_id, Jurisdiction::JurisdictionGlobalGdpr, &pepper).unwrap();
-        let did2 = derive_federated_did(internal_id, Jurisdiction::JurisdictionGlobalGdpr, &pepper).unwrap();
+        let did1 = derive_federated_did(internal_id, Jurisdiction::GlobalGdpr, &pepper).unwrap();
+        let did2 = derive_federated_did(internal_id, Jurisdiction::GlobalGdpr, &pepper).unwrap();
 
         assert_eq!(did1, did2);
         assert!(did1.starts_with("did:splinter:global:"));
@@ -244,15 +408,19 @@ mod tests {
             badges: vec![VerifiedBadgeType::VerifiedBadgeHardwareAttestedHuman],
         };
 
-        let public_profile = project_blind_profile(&raw, Jurisdiction::JurisdictionGlobalGdpr, &pepper).unwrap();
+        let public_profile =
+            project_blind_profile(&raw, Jurisdiction::GlobalGdpr, &pepper).unwrap();
 
         assert_eq!(public_profile.handle, "@theskeletonsword");
         assert_eq!(public_profile.display_name, "perex");
         assert_eq!(public_profile.followers_count, 14200);
-        assert_eq!(public_profile.following_count, 85);
+        assert_eq!(public_profile.following_count, 0);
         assert!(!public_profile.is_private);
-        assert_eq!(public_profile.badges.len(), 1);
-        assert!(public_profile.federated_did.starts_with("did:splinter:global:"));
+        assert!(public_profile.badges.is_empty());
+        assert!(public_profile.public_avatar_url.is_empty());
+        assert!(public_profile
+            .federated_did
+            .starts_with("did:splinter:global:"));
     }
 
     #[test]
@@ -278,11 +446,23 @@ mod tests {
             badges: vec![VerifiedBadgeType::VerifiedBadgeCreatorPartner],
         };
 
-        let profile = project_blind_profile(&raw, Jurisdiction::JurisdictionGlobalGdpr, &pepper).unwrap();
+        let profile = project_blind_profile(&raw, Jurisdiction::GlobalGdpr, &pepper).unwrap();
         let sig = signer.sign_profile(&profile).unwrap();
 
         // Remote gateway verifies the signature
         assert!(GatewayVerifier::verify_profile(&public_key_bytes, &profile, &sig).is_ok());
+
+        let mut avatar_tampered = profile.clone();
+        avatar_tampered.public_avatar_url = "https://attacker.invalid/avatar".into();
+        assert!(
+            GatewayVerifier::verify_profile(&public_key_bytes, &avatar_tampered, &sig).is_err()
+        );
+        let mut badge_tampered = profile.clone();
+        badge_tampered
+            .badges
+            .push(VerifiedBadgeType::VerifiedBadgeOfficialOrganization as i32);
+        assert!(GatewayVerifier::verify_profile(&public_key_bytes, &badge_tampered, &sig).is_err());
+        assert!(GatewayVerifier::verify_profile(&public_key_bytes, &profile, &[0; 12]).is_err());
 
         // Tamper test: modify display_name
         let mut tampered = profile.clone();

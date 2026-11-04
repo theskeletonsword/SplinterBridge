@@ -1,7 +1,4 @@
-cat << 'EOF' > .gitignore
-/target
-Cargo.lock
+/target/
 **/*.rs.bk
 *.swp
 .DS_Store
-EOF
