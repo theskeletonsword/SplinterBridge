@@ -1159,11 +1159,12 @@ dependencies = [
 
 [[package]]
 name = "splinter-core"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "ed25519-dalek",
  "hex",
  "hmac",
+ "hyper-util",
  "prost",
  "rand",
  "serde",
@@ -1174,14 +1175,16 @@ dependencies = [
  "splinter-safety",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "tonic",
+ "tower 0.4.13",
  "tracing",
  "zeroize",
 ]
 
 [[package]]
 name = "splinter-filter"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "aho-corasick",
  "serde",
@@ -1192,7 +1195,7 @@ dependencies = [
 
 [[package]]
 name = "splinter-proto"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "prost",
  "prost-types",
@@ -1204,7 +1207,7 @@ dependencies = [
 
 [[package]]
 name = "splinter-safety"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "hex",
  "serde",
@@ -1441,6 +1444,7 @@ version = "0.1.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "63e71662fa4b2a2c3a26f570f037eb95bb1f85397f3cd8076caed2f026a6d100"
 dependencies = [
+ "log",
  "pin-project-lite",
  "tracing-attributes",
  "tracing-core",

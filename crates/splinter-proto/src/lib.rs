@@ -7,3 +7,9 @@ pub mod v1 {
 }
 
 pub use v1::*;
+
+// Deliberately NOT re-exported into the federation protocol namespace.
+#[allow(clippy::result_large_err)]
+pub mod local_review {
+    tonic::include_proto!("splinterbridge.local.v1");
+}

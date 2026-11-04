@@ -3,7 +3,14 @@ use ed25519_dalek::SigningKey;
 use rand::{rngs::OsRng, RngCore};
 use splinter_core::*;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let review = SemanticReviewGate::new(
+        &SyntheticFixtureReviewer,
+        1,
+        std::time::Duration::from_secs(1),
+        10000,
+    )?;
     for (origin, destination) in [
         (Jurisdiction::GlobalGdpr, Jurisdiction::CnPiplCac),
         (Jurisdiction::CnPiplCac, Jurisdiction::GlobalGdpr),
@@ -48,8 +55,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &signer,
             &filter,
             &safety,
-        )?;
-        let envelope = outbound.prepare_local(destination, &raw, &pepper, &draft)?;
+        )?
+        .with_route_policy(destination, ExportRoutePolicy::default())
+        .with_semantic_review(&review);
+        let envelope = outbound
+            .prepare_local(destination, &raw, &pepper, &draft)
+            .await?;
         // In a real deployment this key binding is provisioned locally, never taken from a received message.
         let trusted = TrustedGateway {
             key_id: "configured-gateway".into(),
@@ -70,4 +81,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     Ok(())
+}
+
+// Synthetic data demonstration ONLY. Production must supply a locally evaluated model.
+struct SyntheticFixtureReviewer;
+impl SemanticClassifier for SyntheticFixtureReviewer {
+    fn classify(&self, input: ReviewInput) -> ClassificationFuture<'_> {
+        Box::pin(async move {
+            if input.fields.len() != 2
+                || input.fields[0].text != "@example"
+                || input.fields[1].text != "Example"
+            {
+                return Err(ClassifierFailure::Unavailable);
+            }
+            Ok(SemanticReport {
+                fields: input
+                    .fields
+                    .into_iter()
+                    .map(|f| FieldVerdict {
+                        field: f.field,
+                        decision: SemanticDecision::Allow,
+                        confidence_bps: 10000,
+                    })
+                    .collect(),
+            })
+        })
+    }
 }

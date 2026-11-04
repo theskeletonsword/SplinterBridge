@@ -2,8 +2,9 @@ SplinterBridge
 Copyright 2026 (TheSkeletonSword / perex)
 
 This product includes software developed by Agustin Pereira Rojas
-as an open-source zero-trust server-to-server (S2S) partitioned
-federation engine (https://github.com/theskeletonsword/SplinterBridge).
+as an open-source protocol and reference libraries for partitioned
+server-to-server federation between independent social-network backends
+(https://github.com/theskeletonsword/SplinterBridge).
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,6 +17,69 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+
+========================================================================
+Architecture and Scope Notice (Informational)
+========================================================================
+
+SplinterBridge is platform-neutral. TikTok, Douyin, ByteDance, Meta and their
+products are illustrative integration examples only. No affiliation,
+endorsement, official integration or regulatory approval is asserted.
+
+The intended architecture keeps China and overseas application backends
+mutually blind. Neither backend is to have direct access to the other's
+application services, databases, internal identity records, credentials,
+private social graph or internal account mappings. Shared databases,
+cross-region replication and direct database joins are outside this design.
+Only dedicated gateways exchange explicitly authorized, policy-checked,
+pseudonymous event projections through the protocol. Each receiving backend
+maintains its own independent local store and local authorization decisions.
+
+Blindness refers to separation of private backend state and internal access.
+It does not mean that gateway peers exchange no information, that gateway
+endpoints are hidden, or that public profiles and content cannot identify
+people. Regional secrets and private identity mappings must remain local.
+The local Rust preparation API minimizes exported fields, derives opaque account,
+event and resource references, and validates the public projection. Incoming
+events are checked against locally configured peer keys and regional bindings.
+Adapters still approve public values and provision trust. The libraries do not
+enforce deployment network isolation or guarantee the absence of personal data
+in free-form fields.
+
+Mutually blind backends may still exchange approved public profile projections.
+Visibility is reciprocal: an overseas user may see a Chinese account's public
+nickname/handle, display name, aggregate follower count and public/private account
+flag, and a Chinese user may see the same fields of an overseas account. These correspond
+to handle, display_name, followers_count and is_private in the protocol. They do
+not grant access to either account's internal database ID, private follower graph
+or domestic identity-verification record. Public names may identify their
+owners; this visibility is not anonymous. A private-account flag does not grant
+permission to view private content. The Rust boundary rejects private-account
+content events; its public-profile synchronization remains permitted. Optional
+avatar, following-count and badge fields require explicit projection opt-in
+and independent approval in the receiving gateway configuration.
+
+The interaction policy distinguishes all four routes:
+- Overseas to overseas: no China-specific keyword filter or China route notice.
+- Overseas to China: China keyword checks and a cross-region notice.
+- China to overseas: China keyword checks and a cross-region notice.
+- China to China: China keyword checks under the local integration's policy.
+
+Rejecting an export does not instruct the origin to delete or hide a locally
+accepted overseas event. Platforms must display applicable cross-region
+notices before interaction, including when a policy rejects submission.
+The supplied keyword catalogs are illustrative, not complete regulatory lists.
+
+These boundaries are design requirements, not a determination of legal
+compliance or an assurance against fines, sanctions or other regulatory action
+in China, the United States, Europe or elsewhere. Operators remain responsible
+for assessing their own deployment and data flows. Transport security, trust provisioning, network isolation and platform UI
+integration are not supplied as a complete deployed service by this repository.
+The included inbound checks authenticate and bind a configured peer to a region;
+they do not replace authenticated transport or replay protection.
+
+This section describes intended architecture and implementation scope only.
+It does not modify the Apache License, Version 2.0, or add license conditions.
 
 ========================================================================
 Third-Party Software and Cryptographic Attributions

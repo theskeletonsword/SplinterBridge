@@ -11,23 +11,11 @@ use thiserror::Error;
 /// Structured error returned when an outbound event violates sovereign boundary policies.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum EgressFilterError {
-    #[error(
-        "Egress dropped under CAC regulations: term '{matched_term}' in category '{category}'"
-    )]
-    CacViolation {
-        matched_term: String,
-        category: String,
-        drop_code: DropReasonCode,
-    },
+    #[error("POLICY_KEYWORD")]
+    CacViolation { drop_code: DropReasonCode },
 
-    #[error(
-        "Egress dropped under RKN regulations: term '{matched_term}' in category '{category}'"
-    )]
-    RknViolation {
-        matched_term: String,
-        category: String,
-        drop_code: DropReasonCode,
-    },
+    #[error("POLICY_KEYWORD")]
+    RknViolation { drop_code: DropReasonCode },
 
     #[error("Unsupported or unspecified destination jurisdiction: {0:?}")]
     InvalidJurisdiction(Jurisdiction),
@@ -56,15 +44,12 @@ pub struct InteractionAssessment {
 #[derive(Debug, Clone)]
 struct RuleMeta {
     term: &'static str,
-    category: &'static str,
 }
 
 /// High-throughput in-memory pre-flight filter for outbound federated events.
 pub struct PreflightEgressFilter {
     cac_automaton: AhoCorasick,
-    cac_rules: Vec<RuleMeta>,
     rkn_automaton: AhoCorasick,
-    rkn_rules: Vec<RuleMeta>,
 }
 
 impl Default for PreflightEgressFilter {
@@ -76,105 +61,50 @@ impl Default for PreflightEgressFilter {
 impl PreflightEgressFilter {
     /// Initializes and compiles in-memory Aho-Corasick search automata for sovereign egress rules.
     pub fn new() -> Self {
-        // Cyberspace Administration of China (CAC) high-risk egress lexical catalog.
-        // Covers historical dates, political sensitivity tokens, and banned political iconography.
+        // Illustrative local catalog; not an authoritative regulatory list.
         let cac_definitions: Vec<RuleMeta> = vec![
-            RuleMeta {
-                term: "8964",
-                category: "historical_events",
-            },
-            RuleMeta {
-                term: "tiananmen",
-                category: "historical_events",
-            },
+            RuleMeta { term: "8964" },
+            RuleMeta { term: "tiananmen" },
             RuleMeta {
                 term: "tiananmen square",
-                category: "historical_events",
             },
-            RuleMeta {
-                term: "天安门",
-                category: "historical_events",
-            },
-            RuleMeta {
-                term: "六四",
-                category: "historical_events",
-            },
-            RuleMeta {
-                term: "6月4日",
-                category: "historical_events",
-            },
-            RuleMeta {
-                term: "june 4",
-                category: "historical_events",
-            },
+            RuleMeta { term: "天安门" },
+            RuleMeta { term: "六四" },
+            RuleMeta { term: "6月4日" },
+            RuleMeta { term: "june 4" },
             RuleMeta {
                 term: "winnie the pooh",
-                category: "political_iconography",
             },
             RuleMeta {
-                term: "小熊维尼",
-                category: "political_iconography",
+                term: "小熊维尼"
             },
-            RuleMeta {
-                term: "维尼熊",
-                category: "political_iconography",
-            },
-            RuleMeta {
-                term: "falun",
-                category: "prohibited_organizations",
-            },
-            RuleMeta {
-                term: "法轮",
-                category: "prohibited_organizations",
-            },
-            RuleMeta {
-                term: "法輪",
-                category: "prohibited_organizations",
-            },
-            RuleMeta {
-                term: "tank man",
-                category: "historical_events",
-            },
-            RuleMeta {
-                term: "王维林",
-                category: "historical_events",
-            },
+            RuleMeta { term: "维尼熊" },
+            RuleMeta { term: "falun" },
+            RuleMeta { term: "法轮" },
+            RuleMeta { term: "法輪" },
+            RuleMeta { term: "tank man" },
+            RuleMeta { term: "王维林" },
         ];
 
-        // Roskomnadzor (RKN) high-risk egress lexical catalog.
-        // Covers prohibited extremist terminology and officially sanctioned blacklisted narratives.
+        // Illustrative destination-specific catalog; not a legal classification.
         let rkn_definitions: Vec<RuleMeta> = vec![
             RuleMeta {
                 term: "война против украины",
-                category: "discredited_military",
             },
             RuleMeta {
                 term: "экстремистская организация",
-                category: "prohibited_entities",
             },
             RuleMeta {
                 term: "дискредитация вс рф",
-                category: "state_security",
             },
             RuleMeta {
                 term: "feygin live",
-                category: "foreign_agents",
             },
-            RuleMeta {
-                term: "meduza",
-                category: "undesirable_organizations",
-            },
-            RuleMeta {
-                term: "fbk",
-                category: "extremist_organizations",
-            },
-            RuleMeta {
-                term: "фбк",
-                category: "extremist_organizations",
-            },
+            RuleMeta { term: "meduza" },
+            RuleMeta { term: "fbk" },
+            RuleMeta { term: "фбк" },
             RuleMeta {
                 term: "штабы навального",
-                category: "extremist_organizations",
             },
         ];
 
@@ -194,9 +124,7 @@ impl PreflightEgressFilter {
 
         Self {
             cac_automaton,
-            cac_rules: cac_definitions,
             rkn_automaton,
-            rkn_rules: rkn_definitions,
         }
     }
 
@@ -242,25 +170,19 @@ impl PreflightEgressFilter {
         destination: Jurisdiction,
         text: &str,
     ) -> Result<(), EgressFilterError> {
-        let normalized = text.to_lowercase();
+        let normalized = normalize_for_matching(text);
         match destination {
             Jurisdiction::CnPiplCac => {
-                if let Some(mat) = self.cac_automaton.find(&normalized) {
-                    let rule = &self.cac_rules[mat.pattern()];
+                if self.cac_automaton.is_match(&normalized) {
                     return Err(EgressFilterError::CacViolation {
-                        matched_term: rule.term.to_string(),
-                        category: rule.category.to_string(),
                         drop_code: DropReasonCode::DropReasonCacEgressRestrictedTerm,
                     });
                 }
                 Ok(())
             }
             Jurisdiction::Ru152Fz => {
-                if let Some(mat) = self.rkn_automaton.find(&normalized) {
-                    let rule = &self.rkn_rules[mat.pattern()];
+                if self.rkn_automaton.is_match(&normalized) {
                     return Err(EgressFilterError::RknViolation {
-                        matched_term: rule.term.to_string(),
-                        category: rule.category.to_string(),
                         drop_code: DropReasonCode::DropReasonRknEgressRestrictedTerm,
                     });
                 }
@@ -275,9 +197,62 @@ impl PreflightEgressFilter {
     }
 }
 
+/// Matching copy only: lowercase, fold fullwidth ASCII, remove common invisible
+/// format controls, and collapse whitespace. No rewrite of the local original.
+/// This is NOT complete NFKC, confusable detection or semantic classification.
+fn normalize_for_matching(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut whitespace = false;
+    for ch in text.chars().flat_map(|c| {
+        let c = if ('\u{ff01}'..='\u{ff5e}').contains(&c) {
+            char::from_u32(c as u32 - 0xfee0).unwrap()
+        } else {
+            c
+        };
+        c.to_lowercase()
+    }) {
+        if matches!(ch, '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{2069}' | '\u{feff}')
+        {
+            continue;
+        }
+        if ch.is_whitespace() {
+            if !whitespace {
+                result.push(' ');
+            }
+            whitespace = true;
+        } else {
+            result.push(ch);
+            whitespace = false;
+        }
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn matching_copy_normalizes_common_variants_and_errors_are_value_free() {
+        let filter = PreflightEgressFilter::new();
+        for text in [
+            "ＴＩＡＮＡＮＭＥＮ",
+            "Tian\u{200b}anmen",
+            "Winnie\n\t the\u{a0}Pooh",
+        ] {
+            let error = filter
+                .check_text(Jurisdiction::CnPiplCac, text)
+                .unwrap_err();
+            assert_eq!(error.to_string(), "POLICY_KEYWORD");
+            let diagnostic = format!("{error:?}");
+            assert!(!diagnostic.to_lowercase().contains("tiananmen"));
+            assert!(!diagnostic.to_lowercase().contains("pooh"));
+            assert!(filter
+                .assess_interaction(Jurisdiction::GlobalGdpr, Jurisdiction::GlobalGdpr, text)
+                .result
+                .is_ok());
+        }
+    }
 
     #[test]
     fn interaction_matrix_is_symmetric_for_china_and_leaves_overseas_free() {

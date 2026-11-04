@@ -65,3 +65,14 @@ restrictions, perform semantic classification, or guarantee regulatory approval.
 Each platform's other policies remain independent. Transport security, replay
 protection, network isolation, local storage permissions, and UI integration
 require deployment work.
+
+
+## Mandatory origin-local privacy review
+
+Outbound routes are disabled until explicitly configured. Content and profile
+extras need independent per-destination opt-ins. Both outbound APIs require async
+semantic review before signing. Missing models, invalid/uncertain responses,
+timeouts or saturation withhold the export for local human review without sending
+candidate values to the peer. Literal keyword failures cannot be overridden by a
+model. No trained classifier is bundled; each platform must supply and evaluate
+one inside its origin region. See docs/REGIONAL_REVIEW.md for the contract.

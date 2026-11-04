@@ -7,6 +7,12 @@ pub mod boundary;
 pub mod identity;
 pub mod inbound;
 pub mod outbound;
+pub mod review;
+pub use review::*;
+#[cfg(unix)]
+pub mod local_classifier;
+#[cfg(unix)]
+pub use local_classifier::UnixGrpcClassifier;
 
 pub use boundary::{
     derive_federated_reference, BoundaryError, LocalEventDraft, LocalEventTarget, MAX_EVENT_BYTES,

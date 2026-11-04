@@ -87,6 +87,7 @@ pub(crate) fn project_local_event(
     origin: Jurisdiction,
     pepper: &RegionalPepper,
     draft: &LocalEventDraft,
+    options: PublicProfileOptions,
 ) -> Result<CrossBorderEventPayload, IdentityError> {
     Ok(CrossBorderEventPayload {
         event_id: derive_federated_reference(&draft.local_event_id, origin, pepper, false)?,
@@ -99,7 +100,9 @@ pub(crate) fn project_local_event(
             .unwrap_or_default(),
         timestamp_epoch_ms: draft.timestamp_epoch_ms,
         nonce: draft.nonce,
-        author: Some(project_blind_profile(raw, origin, pepper)?),
+        author: Some(project_blind_profile_with_options(
+            raw, origin, pepper, options,
+        )?),
         text_content: draft.text_content.clone(),
         media_hashes: draft.media_hashes.clone(),
         target_resource_id: match &draft.target {
@@ -135,6 +138,10 @@ pub(crate) fn validate_event(
         || author.display_name.len() > 256
         || author.public_avatar_url.len() > 2048
         || event.text_content.len() > 65536
+        // MIME metadata is a closed enum-like list, never an unchecked text channel.
+        || event.media_hashes.iter().any(|m| !matches!(m.mime_type.as_str(),
+            "" | "image/jpeg" | "image/png" | "image/webp" | "image/gif" |
+            "image/avif" | "video/mp4" | "video/webm"))
         || author.handle.chars().any(char::is_control)
         || author.display_name.chars().any(char::is_control)
         || author
@@ -155,6 +162,11 @@ pub(crate) fn validate_event(
         }
     } else if author.is_private {
         return Err(BoundaryError::PrivateContent);
+    }
+    if event_type == FederatedEventType::EventTypeEngagementInteraction
+        && (!event.text_content.is_empty() || !event.media_hashes.is_empty())
+    {
+        return Err(BoundaryError::InvalidProjection);
     }
     if matches!(
         event_type,

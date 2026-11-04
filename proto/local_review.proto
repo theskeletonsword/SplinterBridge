@@ -1,0 +1,14 @@
+syntax = "proto3";
+package splinterbridge.local.v1;
+
+// HOST-LOCAL interface. Never register this service on the federation listener.
+// Implementers run a privacy model without cloud fallback, tools or DB access.
+// Request bytes use ReviewInput's JSON schema; response bytes use SemanticReport.
+// JSON is bounded and validated by the Rust gate. Neither side may log bodies.
+message ReviewRequest { bytes candidate_json = 1; }
+message ReviewResponse { bytes report_json = 1; }
+
+service LocalPrivacyClassifier {
+  // Honor gRPC deadlines/cancellation and enforce a separate server capacity cap.
+  rpc Classify(ReviewRequest) returns (ReviewResponse);
+}

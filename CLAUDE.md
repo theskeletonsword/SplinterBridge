@@ -35,11 +35,16 @@ Profile signature v2 includes every current profile field via one shared
 serializer and a versioned domain prefix. Envelope signatures bind all known
 fields except the signature itself. Changes to either format require coordinated
 migration and tampering tests. `OutboundGateway::prepare_local` projects local records and signs approved exports.
-The advanced `prepare` validates pre-built projections. Neither modifies the domestic
+Both APIs are async, require an explicit destination route and semantic reviewer,
+and reject sender extras without per-route opt-in. The advanced `prepare` validates pre-built projections. Neither modifies the domestic
 event. Call it per destination after committing the local event. Platform adapters
 and regional databases remain independent. There is no
 replay protection, hardware validation or transport security implementation.
-Filter matching uses lowercased Unicode text with literal example catalogs.
+Filter matching uses lowercased Unicode plus limited fullwidth/invisible/whitespace
+normalization on a copy, with literal example catalogs. Errors must not carry
+matched text. Semantic review is origin-local, bounded and fail-closed. The local
+classifier proto must never be exposed on the federation listener. No trained
+model is bundled. See docs/REGIONAL_REVIEW.md for production gaps.
 The media catalog starts empty; matching uses an inclusive default threshold 31.
 
 `InboundGateway::accept` verifies locally configured peer key/region/destination,

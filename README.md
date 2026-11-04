@@ -1,7 +1,7 @@
 # SplinterBridge
 
 Rust libraries and a Protocol Buffers contract for server-to-server federation
-between independently operated social backends. Version 0.5.0, Apache-2.0.
+between independently operated social backends. Version 0.6.0, Apache-2.0.
 The protocol is platform-neutral: TikTok/Douyin, Meta products and other networks
 are possible integration examples, not dependencies or existing partnerships.
 
@@ -15,8 +15,8 @@ and does not guarantee regulatory compliance, anonymity, or absence of personal 
 | Crate | Function |
 | --- | --- |
 | `splinter-proto` | Protocol messages and generated gRPC client/server interfaces |
-| `splinter-core` | Minimal profile projection, opaque references, outbound preparation, trusted inbound verification, Ed25519 signatures |
-| `splinter-filter` | Destination-specific literal keyword matching with Unicode lowercase handling |
+| `splinter-core` | Minimal projection, route opt-in, async semantic review gate, host-local gRPC classifier client, inbound verification, Ed25519 signatures |
+| `splinter-filter` | Route-specific literal matching with lowercase, fullwidth ASCII and common invisible/whitespace normalization |
 | `splinter-safety` | Local Hamming-distance comparison of supplied 256-bit fingerprints |
 
 The facade crate `splinter-core` re-exports the other crates' APIs.
@@ -56,7 +56,8 @@ from federated pseudonyms to internal accounts must remain local. Shared profile
 and event fields must be minimized and reviewed by the local adapter. Public
 handles, names, avatar URLs and content can still identify people. Blind backend
 separation is not a cryptographic anonymity or zero-knowledge guarantee, and the
-current code does not validate every free-form field for sensitive information.
+review gate requires a configured classifier for candidate free-form fields, but no
+trained model is bundled and this cannot prove the absence of sensitive information.
 
 The destination stores an accepted projection independently. It must not resolve
 a federated identifier by looking up the origin's database. Any local mapping
@@ -162,7 +163,7 @@ used to retroactively filter unrelated Overseas → Overseas conversations.
 
 ## Executable local boundary
 
-Use `OutboundGateway::prepare_local(destination, raw_profile, pepper, draft)`
+Use `OutboundGateway::prepare_local(destination, raw_profile, pepper, draft).await`
 to construct a minimal public profile from local records. Raw profiles and drafts
 are not serializable wire messages. The method derives opaque event/resource
 references instead of copying local database IDs. `resource_id` identifies the
@@ -174,7 +175,9 @@ secrets remain at the origin, and no remote lookup is required by the receiver. 
 with the domain `splinterbridge:reference:v1\0` and length-prefixed kind, region
 and local ID, separate from the account DID derivation.
 
-`prepare` remains an advanced API for pre-approved projections. Both methods
+`prepare(...).await` remains an advanced API for candidate projections. Both methods
+require an explicitly configured destination route and semantic review gate. They
+reject unapproved optional fields; neither can bypass the reviewer. Both methods
 validate event type, regional DID shape, opaque reference shapes, profile field
 limits, private-account restrictions, route policy and media fingerprints.
 They filter profile text as well as event text. Notices accompany all preparation
@@ -195,13 +198,37 @@ cargo run -p splinter-core --example federate --locked
 ```
 
 It demonstrates reciprocal public-profile visibility for private accounts without
-exporting their posts. It generates ephemeral keys and does not open a network
-connection. `interaction_notice_en` supplies suggested English notice copy for
+exporting their posts. It generates ephemeral keys, uses an exact synthetic-fixture reviewer (not a
+semantic model), and does not open a network connection. `interaction_notice_en` supplies suggested English notice copy for
 adapters; actual UI presentation still belongs to the platform.
 
-This boundary cannot determine whether arbitrary user text contains personal data,
+The reviewer integration does not supply a model or establish its accuracy on arbitrary text,
 whether a trusted origin's public claims are truthful, or whether an operator has
 configured network rules correctly. It is not a running federation service.
+
+## Origin-local semantic review
+
+Every outbound preparation now requires an asynchronous `SemanticReviewGate`.
+It bounds concurrency, applies a deadline, validates a closed per-field verdict
+schema and withholds exports on uncertainty, missing responses, overload or errors.
+`UnixGrpcClassifier` connects only to an origin-host Unix socket and verifies the
+worker OS UID; it exposes no TCP/DNS or cross-region inference endpoint. The worker
+must also be isolated from network egress and backend credentials by deployment.
+
+SplinterBridge supplies the gate and integration contract. The integrating
+platform deploys and evaluates its regional model and runs human review. No model
+weights, training pipeline or inference server are included. This is infrastructure
+for a classifier, not a claim that substring matching has become semantic AI.
+
+`review_local_json(...).await` returns the four allowlisted profile fields plus
+`policy_code`, optional fields explicitly enabled for the route, and permitted
+public text. Errors contain only fixed reason codes; uncertainty adds a fixed
+field name. No raw values are included in errors. Model input excludes internal
+IDs, opaque protocol references, credentials and dedicated private profile fields.
+
+Read [REGIONAL_REVIEW.md](docs/REGIONAL_REVIEW.md) for the enforced flow, local worker
+contract, model responsibilities, blind-backend topology and large-scale deployment
+requirements. The libraries are not a production federation service.
 
 ## Build and verify
 
@@ -257,6 +284,14 @@ size limits and validation separately.
 
 ### Migration from earlier releases
 
+0.6.0 makes outbound preparation async and deny-by-default: configure each route
+with `with_route_policy`, configure `with_semantic_review`, and add `.await`.
+The advanced API enforces optional sender fields as well. Keyword errors no longer
+carry matched terms or categories. The new local classifier protocol is separate
+from federation: no existing federation field numbers or signing formats changed.
+See [regional review and production integration](docs/REGIONAL_REVIEW.md) for
+migration, the model responsibility split and remaining deployment requirements.
+
 In 0.5.0, `interaction_notice_es` is renamed to `interaction_notice_en`, and its
 message is English. Update API call sites. The policy document is now
 `INTERACTION_POLICY.md`. Policy matching terms and non-English test fixtures
@@ -289,9 +324,11 @@ existing value prefixes.
 The existing example CAC/RKN keyword catalogs are retained. The low-level `check_text` checks one jurisdiction's catalog. The higher-level
 `assess_interaction` also applies China rules when China is the origin, and
 returns an error when either endpoint jurisdiction is unspecified.
-Unicode lowercasing fixes Cyrillic uppercase matching. It is a literal substring
-filter, not a semantic classifier: false positives, alternative spellings,
-Unicode confusables and omissions remain possible. The example lists are not
+Matching normalizes lowercase (including Cyrillic), fullwidth ASCII, common invisible
+format controls and whitespace on a copy. It remains a literal substring filter:
+false positives, confusables, alternative spellings and omissions remain possible.
+The separate mandatory semantic gate reviews privacy; it cannot override literal
+policy matches. Model deployment and accuracy evaluation belong to the platform. The example lists are not
 complete or authoritative regulatory catalogs. Domestic visibility is controlled
 by the integrating backend, not this library.
 
@@ -307,7 +344,8 @@ not a cryptographic zero-knowledge proof. There is no measured latency guarantee
 
 ## Integration work still required
 
-There is no running gRPC service, mTLS configuration, transport dispatch loop,
+There is a host-local gRPC classifier client, but no model/inference server and no
+running federation gRPC service, mTLS configuration, transport dispatch loop,
 replay cache or timestamp-window enforcement, hardware-attestation verifier,
 persistent storage, rate limiting or connection to existing social platforms.
 Signatures alone do not prevent replay. These components must be implemented

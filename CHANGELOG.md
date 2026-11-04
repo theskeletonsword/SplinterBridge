@@ -1,3 +1,25 @@
+# 0.6.0
+
+- Require per-destination route/content/extra-field opt-ins and asynchronous
+  origin-local semantic review on both outbound preparation APIs before signing.
+- Add a bounded, non-queuing review gate with timeouts, confidence thresholds,
+  closed verdicts and fail-closed handling of missing, duplicate or invalid results.
+- Add a real gRPC client over Unix sockets with server UID validation, request
+  deadlines, bounded messages and no TCP/DNS or external inference fallback.
+  This is a model integration interface, not a bundled trained classifier.
+- Add a JSON business-projection review API: allowlisted fields + policy code on
+  success, fixed codes on rejection, field-only uncertainty with no value echo.
+- Remove matched terms and categories from keyword errors, normalize common
+  fullwidth/invisible/whitespace variants, and preserve route-local originals.
+- Close unchecked MIME metadata and engagement-content text channels.
+- Keep backends/DBs mutually blind; document model ownership and missing production
+  components for large social platforms. The local RPC is separate from federation.
+- Breaking source API migration is documented in README.md and docs/REGIONAL_REVIEW.md.
+  Existing federation protobuf fields and signature formats are unchanged.
+
+Validation results and the environment's Unix-socket limitation are recorded in
+VALIDATION.txt. No model accuracy or production throughput claim is made.
+
 # 0.5.0
 
 - Standardize documentation, policy guidance, client notice text and example
