@@ -2,22 +2,6 @@
 
 Read README.md and CHANGELOG.md for current scope and migration notes.
 
-## Invariants
-
-- Dedicated private profile fields must stay out of profile projection.
-- Regional HMAC secrets stay local; route policy is checked at origin. China rules apply when either endpoint is
-  China; two global endpoints do not inherit them. Cross-region China interactions
-  return notices on acceptance and policy rejection.
-- Media comparison is local; no external media requests in the matching path.
-- Do not claim these libraries guarantee anonymity or legal compliance.
-
-## Architecture
-
-The facade is `splinter-core`; it depends on `splinter-proto`, `splinter-filter`
-and `splinter-safety`. The `.proto` contract is the wire source of truth.
-Dependencies are declared in root Cargo.toml and inherited by members.
-Tests live alongside source in `#[cfg(test)]` modules.
-
 ## Commands
 
 ```bash
@@ -27,27 +11,43 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo fmt --all -- --check
 ```
 
-The build uses vendored protoc unless PROTOC is set. Prost strips the
-`Jurisdiction` prefix from jurisdiction values, but `DropReasonCode` and
-`VerifiedBadgeType` values retain `DropReason` and `VerifiedBadge` prefixes.
+- Build uses vendored `protoc` unless `PROTOC` is set.
+- `clippy`/`rustfmt` may not be installed in every environment; if a command is missing, skip it rather than installing.
+- `cargo test --workspace --locked` is the single verification step; run it after any code change.
 
-Profile signature v2 includes every current profile field via one shared
-serializer and a versioned domain prefix. Envelope signatures bind all known
-fields except the signature itself. Changes to either format require coordinated
-migration and tampering tests. `OutboundGateway::prepare_local` projects local records and signs approved exports.
-Both APIs are async, require an explicit destination route and semantic reviewer,
-and reject sender extras without per-route opt-in. The advanced `prepare` validates pre-built projections. Neither modifies the domestic
-event. Call it per destination after committing the local event. Platform adapters
-and regional databases remain independent. There is no
-replay protection, hardware validation or transport security implementation.
-Filter matching uses lowercased Unicode plus limited fullwidth/invisible/whitespace
-normalization on a copy, with literal example catalogs. Errors must not carry
-matched text. Semantic review is origin-local, bounded and fail-closed. The local
-classifier proto must never be exposed on the federation listener. No trained
-model is bundled. See docs/REGIONAL_REVIEW.md for production gaps.
-The media catalog starts empty; matching uses an inclusive default threshold 31.
+## Workspace
 
-`InboundGateway::accept` verifies locally configured peer key/region/destination,
-canonical bounded payloads, private-account policy and route notice consistency.
-No remote database lookup is performed. Raw profiles redact Debug output; profile
-extras require explicit opt-in. See the migration section for reference formats.
+- Four crates: `splinter-proto`, `splinter-filter`, `splinter-safety`, `splinter-core`.
+- `splinter-core` is the facade; it re-exports the other crates' public APIs.
+- Dependencies declared in root `Cargo.toml` (workspace 0.9.0, edition 2021) and inherited by members.
+- Tests live alongside source in `#[cfg(test)]` modules. Run one crate: `cargo test -p splinter-core --locked`.
+
+## Source of truth
+
+- `proto/splinter_bridge.proto` and `proto/local_review.proto` are the wire contract. Prost strips the `Jurisdiction` prefix from jurisdiction enum variants; `DropReasonCode` and `VerifiedBadgeType` keep their `DropReason`/`VerifiedBadge` prefixes.
+- Do not reuse or remove protobuf field numbers. Append-only changes only; signature formats (profile v2, envelope v1) require coordinated migration + tampering tests if changed.
+- `crates/splinter-proto/build.rs` compiles both protos with `tonic-build`.
+
+## Architecture
+
+- `splinter-core` modules: `boundary`, `differential_privacy`, `ephemeral`, `hsm`, `identity`, `inbound`, `killswitch`, `merkle`, `outbound`, `outbox`, `rate_limit`, `replay`, `review`, plus `audit_log`, `attestation`, `doj_compliance` (DOJ/CFIUS compliance interfaces).
+- `splinter-filter` modules: `catalog` (hot-reloadable regulatory catalog).
+- Backends must remain mutually blind: no direct DB access, shared credentials, replication, or cross-region joins. Gateways exchange signed, policy-checked projections only.
+- `OutboundGateway::prepare_local` / `prepare` are async, require explicit destination route + semantic reviewer, reject sender extras without per-route opt-in. Neither modifies the domestic event.
+- `InboundGateway::accept` verifies peer key/region/destination, canonical payload, route notice consistency. No remote DB lookup.
+
+## Invariants (do not break)
+
+- Dedicated private profile fields stay out of profile projection.
+- Regional HMAC secrets stay local; route policy checked at origin. China rules apply when either endpoint is China.
+- Media comparison is local; no external media requests in the matching path.
+- Errors must not carry matched text or matched values.
+- Do not claim the libraries guarantee anonymity or legal compliance.
+- New compliance modules (`doj_compliance`, `attestation`, `audit_log`, `killswitch`) default to **deny**; they are trait interfaces only — operators must wire their own production backends.
+
+## Notable gotchas
+
+- `clippy`/`rustfmt` not installed in this environment; do not run install steps.
+- `OutboundError::review_json()` returns fixed codes only — never echo matched text.
+- Media catalog starts empty; `OutboundGateway::prepare` rejects media exports until a catalog is loaded. Default PDQ Hamming threshold is 31 (inclusive).
+- `DropReasonDirectPiiDetected` blocks direct PII (email, phone, IPv4, national ID pattern) before crossing the border.
