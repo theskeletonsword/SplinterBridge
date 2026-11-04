@@ -326,28 +326,28 @@ k-anonymity gates). A persistent-profile social network cannot be absolutely
 anonymous: a face or voice with a stable handle links content to a physical
 person. The realistic industry path is to homologate this shielded pseudonymization
 within formal transfer mechanisms (CAC assessment / standard contractual clauses),
-not to claim anonymous profiles. Full analysis: docs/ANONYMIZACION.md.
+not to claim anonymous profiles. Full analysis: docs/ANONYMIZATION.md.
 
-### Anonimización formalmente homologable (CAC / PIPL Art. 73 y NIST SP 800-188)
+### Formally homologable anonymization (CAC / PIPL Art. 73 and NIST SP 800-188)
 
-v0.8.0 extiende el contrato proto sin romper compatibilidad para acercar el
-perfil público a la definición de anonimización:
+v0.8.0 extends the proto contract without breaking compatibility to bring the
+public profile closer to the definition of anonymization:
 
-- `generalized_followers_count`: conteo de seguidores bucketizado k-anónimo
-  (NIST SP 800-188); la UI sigue mostrando un valor formateado (ej. `14.8K`).
-- `actor_public_key`: clave Ed25519 del Actor Público Autónomo, desacoplada del
-  ID civil.
-- `commitment_hash`: compromiso Merkle que vincula el actor a la identidad civil
-  retenida localmente; solo la raíz cruza la frontera.
-- `content_signature` y `zk_proof_reference`: firma de autoría del actor y
-  referencia a una prueba ZK retenida en la jurisdicción de origen.
-- `scan_direct_pii`: bloquea exportaciones con correo, teléfono, IPv4 o RUT
-  chileno directamente identificadores.
+- `generalized_followers_count`: k-anonymized bucketized follower count
+  (NIST SP 800-188); the UI keeps showing a formatted value (e.g. `14.8K`).
+- `actor_public_key`: Ed25519 key of the Autonomous Public Actor, decoupled from
+  the civil ID.
+- `commitment_hash`: Merkle commitment binding the actor to the locally retained
+  civil identity; only the root crosses the border.
+- `content_signature` and `zk_proof_reference`: actor authorship signature and
+  reference to a ZK proof retained in the origin jurisdiction.
+- `scan_direct_pii`: blocks exports with directly identifying email, phone, IPv4
+  or generic national ID.
 
-La experiencia de usuario se mantiene exactamente igual (nickname, display
-name, seguidores, posts), pero el vínculo civil queda anclado bajo custodia
-local de umbral (Shamir), auditable solo ante orden judicial local. Véase
-docs/HOMOLOGACION_CAC_NIST.md.
+The end-user experience remains exactly the same (nickname, display name,
+followers, posts), but the civil link is anchored under local threshold custody
+(Shamir), auditable only upon a motivated local judicial order. See
+docs/CAC_NIST_HOMOLOGATION.md.
 
 ### Migration from earlier releases
 

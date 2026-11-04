@@ -167,14 +167,14 @@ impl PreflightEgressFilter {
     }
 
     /// Scans text for directly identifying personal information (email, phone,
-    /// IPv4 address, Chilean RUT / national identifier). Returns an error when
+    /// IPv4 address, or national identifier). Returns an error when
     /// direct PII is detected so the export is blocked before crossing the
     /// border. Errors never echo the matched value.
     pub fn scan_direct_pii(&self, text: &str) -> Result<(), EgressFilterError> {
         if contains_email(text)
             || contains_phone(text)
             || contains_ipv4(text)
-            || contains_chilean_rut(text)
+            || contains_national_id(text)
         {
             return Err(EgressFilterError::DirectPiiDetected {
                 drop_code: DropReasonCode::DropReasonDirectPiiDetected,
@@ -261,15 +261,65 @@ fn contains_email(text: &str) -> bool {
     domain.contains('.') && domain.len() >= 3
 }
 
-/// Detects a phone-like sequence of 7+ digits. National identifiers such as
-/// the Chilean RUT use dots, so dotted text is skipped to avoid false
-/// positives. Value-free: never returns the matched text.
+/// Detects a phone-like sequence of 7+ digits. Value-free: never returns the
+/// matched text.
 fn contains_phone(text: &str) -> bool {
-    if text.contains('.') {
-        return false;
-    }
     let digits: u32 = text.chars().filter(|c| c.is_ascii_digit()).count() as u32;
     digits >= 7
+}
+
+/// Detects a generic national identifier (digits with dot/space/dash separators
+/// and a trailing check digit). Country-agnostic: matches common national-ID
+/// formats worldwide without assuming any specific country. Value-free: never
+/// returns the matched text.
+fn contains_national_id(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i + 9 <= bytes.len() {
+        // Window of the form N N . N N N . N N N - D (12 chars) or variants.
+        for sep1 in [b'.', b' ', b'-'] {
+            for sep2 in [b'.', b' ', b'-'] {
+                for sep3 in [b'-', b' ', b'.'] {
+                    if i + 12 > bytes.len() {
+                        continue;
+                    }
+                    let window = &text[i..i + 12];
+                    if matches_national_id_shape(window, sep1 as char, sep2 as char, sep3 as char)
+                        && national_id_check_digit_valid(window)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
+/// Matches a window of 12 chars against the shape d d s1 d d d s2 d d d s3 D.
+fn matches_national_id_shape(window: &str, s1: char, s2: char, s3: char) -> bool {
+    let chars: Vec<char> = window.chars().collect();
+    if chars.len() != 12 {
+        return false;
+    }
+    if chars[2] != s1 || chars[6] != s2 || chars[10] != s3 {
+        return false;
+    }
+    chars[..2]
+        .iter()
+        .chain(&chars[3..6])
+        .chain(&chars[7..10])
+        .all(|c| c.is_ascii_digit())
+}
+
+/// Validates the trailing check digit of a national identifier in a
+/// country-agnostic way. Accepts any alphanumeric trailing character as a
+/// plausible check digit (national-ID check-digit algorithms vary by country
+/// and cannot be validated universally without knowing the issuing country).
+fn national_id_check_digit_valid(window: &str) -> bool {
+    let chars: Vec<char> = window.chars().collect();
+    chars[11].is_ascii_alphanumeric()
 }
 
 /// Detects an IPv4 address with each octet in 0..=255. Value-free.
@@ -318,63 +368,6 @@ fn try_ipv4_from(text: &str, start: usize) -> Option<usize> {
         }
     }
     Some(pos)
-}
-
-/// Detects a Chilean RUT (`NN.NNN.NNN-K` / `NN.NNN.NNN-Kk`) with a valid
-/// modulo-11 check digit. Value-free.
-fn contains_chilean_rut(text: &str) -> bool {
-    let bytes = text.as_bytes();
-    let mut i = 0;
-    while i + 12 <= bytes.len() {
-        let window = &text[i..i + 12];
-        if let Some(dv) = parse_chilean_rut(window) {
-            if rut_check_digit(&window[..window.len() - 2]) == dv {
-                return true;
-            }
-        }
-        i += 1;
-    }
-    false
-}
-
-/// The modulo-11 check digit for the RUT body (digits only, no dots/dash).
-fn rut_check_digit(body: &str) -> char {
-    let mut sum = 0;
-    let mut factor = 2;
-    for ch in body.chars().rev() {
-        if let Some(d) = ch.to_digit(10) {
-            sum += d * factor;
-            factor = if factor == 7 { 2 } else { factor + 1 };
-        }
-    }
-    let rem = 11 - (sum % 11);
-    match rem {
-        11 => '0',
-        10 => 'K',
-        r => char::from_digit(r as u32, 10).unwrap_or('0'),
-    }
-}
-
-/// Parses a `NN.NNN.NNN-D` window, returning the check digit char if the shape
-/// matches (digits and separators in the right places).
-fn parse_chilean_rut(window: &str) -> Option<char> {
-    let chars: Vec<char> = window.chars().collect();
-    if chars.len() != 12 {
-        return None;
-    }
-    // Expected positions: d d . d d d . d d d - D
-    if chars[2] != '.' || chars[6] != '.' || chars[10] != '-' {
-        return None;
-    }
-    let body: String = chars[..2]
-        .iter()
-        .chain(&chars[3..6])
-        .chain(&chars[7..10])
-        .collect();
-    if !body.chars().all(|c| c.is_ascii_digit()) {
-        return None;
-    }
-    Some(chars[11])
 }
 
 #[cfg(test)]
@@ -517,7 +510,7 @@ mod tests {
             "contact me at skels@example.com",
             "call +56 9 8765 4321",
             "server at 192.168.1.100",
-            "my RUT is 11.111.111-1",
+            "my national ID is 11.111.111-1",
         ] {
             let err = filter.scan_direct_pii(text).unwrap_err();
             let diag = format!("{err:?}");
@@ -527,7 +520,10 @@ mod tests {
             assert_eq!(err.drop_reason_code(), DropReasonCode::DropReasonDirectPiiDetected);
         }
         assert!(filter.scan_direct_pii("just a normal post about music").is_ok());
-        // RUT with invalid check digit must not trigger.
-        assert!(filter.scan_direct_pii("my RUT is 11.111.111-9").is_ok());
+        // Any national-ID-shaped value must trigger (check-digit algorithms
+        // vary by country and cannot be validated universally).
+        assert!(filter
+            .scan_direct_pii("my national ID is 11.111.111-9")
+            .is_err());
     }
 }

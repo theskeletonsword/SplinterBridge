@@ -1,48 +1,48 @@
 # 0.8.0
 
-Anonimización formalmente homologable (CAC / PIPL Art. 73 y NIST SP 800-188), 2026-11-04:
-- Contrato proto extendido sin romper compatibilidad (campos al final): 
-  `SanitizedPublicProfile` añade `generalized_followers_count` (bucket k-anónimo,
-  NIST SP 800-188), `actor_public_key` (Ed25519 del Actor Público Autónomo) y
-  `commitment_hash` (vínculo civil anclado localmente). `CrossBorderEventPayload`
-  añade `content_signature` (firma de autoría del actor), `actor_public_key` y
-  `zk_proof_reference` (referencia a prueba ZK retenida localmente).
-- Nuevo módulo `splinter_core::merkle`: árbol de commitments Merkle; solo la raíz
-  cruza la frontera, la apertura civil queda bajo custodia local de umbral.
-- Nuevo módulo `splinter_core::differential_privacy::generalize_followers_count`
-  para bucketización k-anónima de seguidores.
-- `splinter_filter::PreflightEgressFilter::scan_direct_pii`: detección de PII
-  directa (email, teléfono, IPv4, RUT chileno) que bloquea la exportación con
-  `DropReasonCode::DropReasonDirectPiiDetected`; integrado en
-  `OutboundGateway::check_export` sobre texto, handle, display name y avatar.
-- `splinter_core::identity`: `project_blind_profile_with_options` deriva el
-  follower count generalizado y expone la clave pública y commitment del actor.
-- `docs/HOMOLOGACION_CAC_NIST.md`: arquitectura de cuatro capas para homologar
-  la anonimización ante la CAC (China) y el NIST/FTC (EE. UU.), manteniendo
-  exactamente la experiencia de usuario (nickname, display name, seguidores,
-  posts).
-- Nuevo `OutboundRejection::DirectPii`. Bump de versión a 0.8.0.
+Formally homologable anonymization (CAC / PIPL Art. 73 and NIST SP 800-188), 2026-11-04:
+- Proto contract extended without breaking compatibility (fields appended at the
+  end): `SanitizedPublicProfile` adds `generalized_followers_count` (k-anonymity
+  bucket, NIST SP 800-188), `actor_public_key` (Ed25519 of the Autonomous Public
+  Actor) and `commitment_hash` (civil commitment anchored locally).
+  `CrossBorderEventPayload` adds `content_signature` (actor authorship
+  signature), `actor_public_key` and `zk_proof_reference` (locally-retained ZK
+  proof reference).
+- New module `splinter_core::merkle`: Merkle commitment tree; only the root
+  crosses the border, civil opening under local threshold custody.
+- New module `splinter_core::differential_privacy::generalize_followers_count`
+  for k-anonymized bucketization of followers.
+- `splinter_filter::PreflightEgressFilter::scan_direct_pii`: direct PII
+  detection (email, phone, IPv4, generic national ID) blocking export with
+  `DropReasonCode::DropReasonDirectPiiDetected`; integrated into
+  `OutboundGateway::check_export` over text, handle, display name and avatar.
+- `splinter_core::identity`: `project_blind_profile_with_options` derives the
+  generalized follower count and exposes the actor public key and commitment.
+- `docs/CAC_NIST_HOMOLOGATION.md`: four-layer architecture to homologate
+  anonymization before the CAC (China) and NIST/FTC (U.S.), while preserving
+  the exact end-user experience (nickname, display name, followers, posts).
+- New `OutboundRejection::DirectPii`. Version bump to 0.8.0.
 
 # 0.7.0
 
-Anonimización y seudonimización (PIPL art. 73 / GDPR Considerando 26), 2026-11-04:
-- Nuevo módulo `splinter_core::ephemeral`: identificadores efímeros con semilla
-  maestra rotatoria por época, `derive_ephemeral_did` no vinculable entre
-  épocas, `EphemeralSession` con crypto-shredding (zeroize) del nonce al
-  dropear y `EphemeralVault` con rotación de claves de época destruidas en
-  memoria. Respuesta al problema de que `derive_federated_did` es reversible
-  por el origen operator con el pepper local (seudonimización, no anonimización).
-- Nuevo módulo `splinter_core::differential_privacy`: ruido laplaciano y
-  gaussiano, conteo diferencial (epsilon) y puerta k-anónima para agregados
-  de métricas/telemetría sin traza individual.
-- Nueva guía docs/ANONYMIZATION.md: distingue seudonimización de anonimización
-  bajo PIPL art. 73 y GDPR Considerando 26, describe los tres caminos técnicos
-  y el camino realista de transferencia (evaluación CAC / contratos estándar).
-- Documenta en `identity.rs` que `derive_federated_did` es determinista y
-  reversible por el origen; remite a `ephemeral` para identificadores
-  no vinculables.
-- Bump de versión a 0.7.0. Ningún cambio en campos de proto, números de campo
-  ni formatos de firma.
+Anonymization and pseudonymization (PIPL Art. 73 / GDPR Recital 26), 2026-11-04:
+- New module `splinter_core::ephemeral`: ephemeral identifiers with rotating
+  master seed per epoch, `derive_ephemeral_did` unlinkable across epochs,
+  `EphemeralSession` with crypto-shredding (zeroize) of the nonce on drop, and
+  `EphemeralVault` with rotation of epoch keys destroyed in memory. Response to
+  the problem that `derive_federated_did` is reversible by the origin operator
+  with the local pepper (pseudonymization, not anonymization).
+- New module `splinter_core::differential_privacy`: Laplace and Gaussian noise,
+  differential epsilon counting and k-anonymity gate for metrics/telemetry
+  aggregates without individual trace.
+- New guide docs/ANONYMIZATION.md: distinguishes pseudonymization from
+  anonymization under PIPL Art. 73 and GDPR Recital 26, describes the three
+  technical paths and the realistic transfer route (CAC assessment / standard
+  contracts).
+- Documents in `identity.rs` that `derive_federated_did` is deterministic and
+  origin-reversible; refers to `ephemeral` for unlinkable identifiers.
+- Version bump to 0.7.0. No changes to proto fields, field numbers or signature
+  formats.
 
 Documentation revision, 2026-11-04:
 - Update README and the informational NOTICE sections with source-linked legal
