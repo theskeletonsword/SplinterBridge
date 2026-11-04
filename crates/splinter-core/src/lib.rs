@@ -34,7 +34,10 @@ pub use outbound::{OutboundError, OutboundGateway, OutboundRejection};
 pub use attestation::{
     AttestationError, AttestationReport, AttestationVerifier, DenyAllAttestation, EnclaveType,
 };
-pub use audit_log::{AuditLog, AuditLogError, AuditRecord, NoopAuditLog};
+pub use audit_log::{
+    compute_record_hash, verify_records, AuditLog, AuditLogError, AuditRecord, HashChainedAuditLog,
+    NoopAuditLog, DEFAULT_AUDIT_MAX_RECORDS,
+};
 pub use differential_privacy::{
     gaussian_noise, k_anonymous_bucket, laplace_noise, noisy_count, DifferentialPrivacyError,
 };
@@ -51,11 +54,17 @@ pub use identity::{
     derive_federated_did, project_blind_profile, project_blind_profile_with_options, GatewaySigner,
     GatewayVerifier, IdentityError, PublicProfileOptions, RawInternalUserProfile, RegionalPepper,
 };
-pub use killswitch::{DefaultKillSwitch, KillSwitch, KillSwitchError, KillSwitchStatus};
+#[allow(deprecated)]
+pub use killswitch::DefaultKillSwitch;
+pub use killswitch::{AtomicKillSwitch, KillSwitch, KillSwitchError, KillSwitchStatus};
 pub use outbox::{Inbox, NoopInbox, NoopOutbox, Outbox, OutboxError};
-pub use rate_limit::{NoopRateLimiter, RateLimitError, RateLimitVerdict, RateLimiter, TokenBucket};
+pub use rate_limit::{
+    NoopRateLimiter, RateLimitError, RateLimitVerdict, RateLimiter, TokenBucket,
+    DEFAULT_RATE_LIMIT_MAX_KEYS,
+};
 pub use replay::{
-    ReplayCache, ReplayCacheError, SlidingWindowReplayCache, DEFAULT_REPLAY_WINDOW_SECONDS,
+    ReplayCache, ReplayCacheError, SlidingWindowReplayCache, DEFAULT_REPLAY_MAX_ENTRIES,
+    DEFAULT_REPLAY_WINDOW_SECONDS,
 };
 pub use splinter_filter::{EgressFilterError, InteractionAssessment, PreflightEgressFilter};
 pub use splinter_proto::*;

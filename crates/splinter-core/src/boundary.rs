@@ -139,6 +139,10 @@ pub(crate) fn validate_event(
     let event_type = FederatedEventType::try_from(event.event_type)
         .map_err(|_| BoundaryError::InvalidProjection)?;
     if event.encoded_len() > MAX_EVENT_BYTES
+        // Replay protection keys on the nonce and checks the timestamp window, so
+        // unset values (proto defaults) are never valid.
+        || event.nonce == 0
+        || event.timestamp_epoch_ms <= 0
         || !valid_reference(&event.event_id, "event", Some(origin))
         || (!event.target_resource_id.is_empty()
             && !valid_reference(&event.target_resource_id, "resource", None))
