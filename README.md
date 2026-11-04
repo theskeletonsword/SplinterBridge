@@ -414,8 +414,7 @@ not a cryptographic zero-knowledge proof. There is no measured latency guarantee
 
 There is a host-local gRPC classifier client, but no model/inference server and no
 running federation gRPC service, mTLS configuration, transport dispatch loop,
-replay cache or timestamp-window enforcement, hardware-attestation verifier,
-persistent storage, rate limiting or connection to existing social platforms.
+persistent storage, or connection to existing social platforms.
 Signatures alone do not prevent replay. These components must be implemented
 and reviewed before production deployment. Use `OutboundGateway::prepare_local` (or the advanced `prepare`) to apply the
 current projection, text and media checks before signing. Calling the lower-level signer alone bypasses those checks. The helper
@@ -425,6 +424,26 @@ hashes. It checks field shapes and catalog terms but cannot establish that
 free-form profile values contain no sensitive data, or that a policy decision
 matches every rule a regulator might impose. The example keyword lists remain
 incomplete; arbitrary disallowed content cannot be identified by those lists alone.
+
+The library supplies trait interfaces (not implementations) for the following
+production components, which the operator must wire to their own infrastructure:
+
+| Component | Trait | Production backing |
+|---|---|---|
+| Anti-replay | `ReplayCache`, `SlidingWindowReplayCache` | Redis/etcd/Cassandra shared nonce cache |
+| Rate limiting | `RateLimiter`, `NoopRateLimiter`, `TokenBucket` | Distributed token bucket / sliding window |
+| HSM key custody | `HsmSigner`, `SoftwareHsm` | FIPS 140-3 / OSCCA GM/T HSM via PKCS#11 |
+| Durable delivery | `Outbox`, `Inbox`, `NoopOutbox`, `NoopInbox` | Kafka, Pulsar or Raft-based replicated log |
+| Catalog sync | `RegulatoryCatalog`, `AllowAllCatalog` | Zero-downtime hot-reload from config service |
+| Content classification (DOJ) | `ContentClassifier`, `DenyAllClassifier`, `AllowExpressiveClassifier` | DOJ-reviewed expressive-material classifier |
+| PAFACA relationship check | `PaFacadeChecker`, `DenyAllPaFacade` | Operator legal-reviewed route relationship policy |
+| Remote attestation | `AttestationVerifier`, `DenyAllAttestation` | AMD SEV-SNP / Intel TDX fiduciary auditor |
+| Audit log | `AuditLog`, `NoopAuditLog` | Append-only tamper-evident log (CloudTrail, Azure Monitor, etc.) |
+| Kill-switch | `KillSwitch`, `DefaultKillSwitch` | DOJ/CFIUS monitor unilateral kill-switch panel |
+
+All new compliance modules default to **deny** until the operator wires their own
+production backend. See docs/PRODUCTION_REALITY.md for the five production
+barriers and the what-exists-vs-what-production-requires matrix.
 
 For detailed engineering guidance on cross-border data transfer mechanisms, 
 statutory threshold baselines (CAC 2024/2026, GDPR/EDPB 01/2020, US PAFACA/DOJ 28 CFR Part 202), 
