@@ -38,8 +38,9 @@ migration and tampering tests. `OutboundGateway::prepare_local` projects local r
 Both APIs are async, require an explicit destination route and semantic reviewer,
 and reject sender extras without per-route opt-in. The advanced `prepare` validates pre-built projections. Neither modifies the domestic
 event. Call it per destination after committing the local event. Platform adapters
-and regional databases remain independent. There is no
-replay protection, hardware validation or transport security implementation.
+and regional databases remain independent. Replay protection, rate limiting,
+the hash-chained audit log and the kill switch are single-process; there is no
+hardware validation or transport security implementation.
 Filter matching uses lowercased Unicode plus limited fullwidth/invisible/whitespace
 normalization on a copy, with literal example catalogs. Errors must not carry
 matched text. Semantic review is origin-local, bounded and fail-closed. The local
@@ -49,5 +50,7 @@ The media catalog starts empty; matching uses an inclusive default threshold 31.
 
 `InboundGateway::accept` verifies locally configured peer key/region/destination,
 canonical bounded payloads, private-account policy and route notice consistency.
-No remote database lookup is performed. Raw profiles redact Debug output; profile
+It fails closed without `with_replay_cache` and checks the signed nonce/timestamp
+last. Audit records carry value-free codes only; a failed append rejects the
+export or acceptance. No remote database lookup is performed. Raw profiles redact Debug output; profile
 extras require explicit opt-in. See the migration section for reference formats.

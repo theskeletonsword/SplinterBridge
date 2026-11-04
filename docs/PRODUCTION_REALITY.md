@@ -32,9 +32,10 @@ Without a persistent, locally replicated event bus, feeds drift out of sync or
 lose interactions forever.
 
 **What the library provides:** `CrossBorderEventPayload.nonce` and
-`FederatedEventResponse.remote_event_ack_id` fields exist in the contract, but
-there is **no durable outbox, no inbox, no replay cache, and no idempotency
-store** in the Rust code.
+`FederatedEventResponse.remote_event_ack_id` fields exist in the contract, and
+`InboundGateway` rejects duplicate nonces through a required single-process
+`ReplayCache`. There is **no durable outbox, no inbox and no persistent
+idempotency store** in the Rust code.
 
 **What production needs:**
 - Local durable outbox per destination route (write-ahead log before signing).
@@ -51,9 +52,13 @@ Without a distributed anti-replay cache with strict time synchronization
 re-inject old signed packets, resurrecting deleted posts or forging deactivated
 profiles.
 
-**What the library provides:** Nonce field in `LocalEventDraft` and
-`CrossBorderEventPayload`; `DROP_REASON_REPLAY_DETECTED` in `DropReasonCode`.
-No replay window is enforced.
+**What the library provides:** Signed nonce and timestamp in
+`CrossBorderEventPayload` (nonce 0 and unset timestamps are invalid).
+`InboundGateway::accept` refuses to run without a `ReplayCache` and maps
+rejections to `DROP_REASON_REPLAY_DETECTED`. `SlidingWindowReplayCache` enforces
+a bounded per-route window in one process, survives local clock steps backwards,
+and fails closed when full. It is not shared across instances or restarts, and
+there is no tombstone or revocation protocol.
 
 **What production needs:**
 - Anti-replay sliding window (nonce + origin + timestamp) with sub-second clock
@@ -72,8 +77,10 @@ from the remote side can crash the local gateway via file-descriptor exhaustion
 or memory saturation in the Unix socket queue.
 
 **What the library provides:** `SemanticReviewGate` bounds concurrency with a
-semaphore, deadline, and fail-closed overload shedding. No network-level rate
-limiting, no adaptive backpressure, no priority queues.
+semaphore, deadline, and fail-closed overload shedding. `InboundGateway` can
+apply a per-peer `TokenBucket` after signature verification. Both are
+single-process. No network-level rate limiting, no adaptive backpressure, no
+priority queues.
 
 **What production needs:**
 - Distributed rate limiter per origin/destination/route (token bucket or
@@ -221,8 +228,10 @@ emitter, duplicating processing and imposing redundant audits that annul the
 speed advantages of federation.
 
 **What the library provides:** Route policy, literal filter, semantic gate,
-Ed25519 signatures, notice codes. No human moderation queue integration, no
-appeals workflow, no shared liability model.
+Ed25519 signatures, notice codes, and a hash-chained decision log
+(`HashChainedAuditLog`) whose exports either party can verify with
+`verify_records`. No human moderation queue integration, no appeals workflow,
+no durable shared log store, no shared liability model.
 
 **What production needs:**
 - Human moderation queue with SLA per region.
@@ -285,11 +294,11 @@ regulatory-volume counter, no activation service.
 
 ## 6. Summary table: what exists vs. what production requires
 
-| Area | Library v0.9.0 | Production requirement | Owner |
+| Area | Library (unreleased) | Production requirement | Owner |
 |---|---|---|---|
 | Durable delivery | None (in-memory only) | Replicated outbox/inbox, idempotency store | Platform infra |
-| Replay protection | Nonce field; code exists | Sliding-window nonce cache + clock sync | Platform infra |
-| Backpressure | Semaphore gate | Distributed rate limiter + adaptive signals | Platform infra |
+| Replay protection | Required single-process sliding-window cache | Shared nonce cache across instances + clock sync | Platform infra |
+| Backpressure | Semaphore gate; per-peer token bucket (single process) | Distributed rate limiter + adaptive signals | Platform infra |
 | HSM / key custody | Process memory, zeroize | PKCS#11 / FIPS 140-3 / OSCCA GM/T HSM | Security team |
 | ZKP verification | None | Halo2/Bellman integration + GPU batching | Crypto team |
 | Semantic inference | Gate contract only | Local model farm per region | ML team |
@@ -297,6 +306,8 @@ regulatory-volume counter, no activation service.
 | Mobile enclaves | Reject unsupported | Pluggable verifier per enclave type | Client team |
 | Legal activation | None | Region-local activation service + CAC/SCC/TIA | Legal team |
 | Human moderation | None | Queue + appeals + shared audit log | Trust & Safety |
+| Audit trail | In-memory hash-chained decision log + verifier | WORM storage, external head-hash anchoring, retention | Compliance team |
+| Kill switch | `AtomicKillSwitch` on both gateways | Authenticated auditor control plane | Security team |
 
 ---
 
@@ -310,7 +321,8 @@ mathematical and architectural foundations, but putting it into operation
 requires raising the monumental network of compute, moderation, legal support,
 and sovereign enclaves that sustain that bridge over the geopolitical abyss.
 
-The library is audit-ready as a **cryptographic reference**; it is **not**
-audit-ready as a **production federation service**. ByteDance, Meta, or any
-operator adopting it must treat items in the "Production requirement" column as
-mandatory pre-deployment work.
+The library has **not** been independently audited. It can serve as a
+reviewable **reference implementation**; it is **not** a production federation
+service, and nothing in it establishes DOJ, CFIUS, CAC or other regulatory
+approval. Any operator adopting it must treat items in the "Production
+requirement" column as mandatory pre-deployment work.

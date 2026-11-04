@@ -165,8 +165,8 @@ to render the profile with its posts.
 - The full ZK proof (zk-SNARK / Groth16) of "valid civil account without
   sanctions" is the **next integration phase** and is not bundled in this
   version; `zk_proof_reference` is the hook for it.
-- No replay protection, transport security (mTLS) or complete federation
-  service.
+- Replay protection covers a single process only (`SlidingWindowReplayCache`);
+  no transport security (mTLS) or complete federation service.
 - The code does not guarantee anonymity or legal compliance; it declares no
   safe harbor. See AGENTS.md (invariants), docs/LEGAL_DEPLOYMENT.md and
   docs/ANONYMIZATION.md.

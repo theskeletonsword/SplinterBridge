@@ -134,7 +134,7 @@ remains adapter work.
 
 - No bundled trained language model; semantic review is origin-local, bounded
   and fail-closed.
-- No replay protection, hardware validation, transport security or complete
-  federation service.
+- Replay protection covers a single process only (`SlidingWindowReplayCache`);
+  no hardware validation, transport security or complete federation service.
 - The code does not guarantee anonymity or legal compliance; it declares no safe
   harbor. See AGENTS.md (invariants) and docs/LEGAL_DEPLOYMENT.md.

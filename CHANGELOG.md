@@ -1,3 +1,39 @@
+# Unreleased
+
+Working controls behind the 0.9.0 interfaces, a crash fix and green CI:
+- **Fix (security):** `scan_direct_pii` sliced `&str` at byte offsets and
+  panicked on any CJK/Cyrillic text longer than 12 bytes. It runs on both the
+  outbound and inbound paths, so a peer could crash a receiving gateway with
+  ordinary Chinese text. It now scans byte windows; regression test added.
+- `SlidingWindowReplayCache` and `TokenBucket` were stubs that always allowed.
+  They are now real, bounded, single-process implementations with tests
+  (atomic check-and-record, clock-step-back protection, fail closed when full).
+- New `HashChainedAuditLog` with `compute_record_hash`/`verify_records`: SHA-256
+  hash-chained, value-free decision records that auditors can verify from an
+  export. `NoopAuditLog::verify_chain` now returns an error instead of `true`.
+- New `AtomicKillSwitch`: trips immediately, rearms only with the auditor token
+  (stored as SHA-256). `DefaultKillSwitch`, which could never trip, is deprecated.
+- Gateways: `InboundGateway::with_replay_cache` (required), `with_rate_limiter`,
+  and `with_audit_log`/`with_kill_switch` on both gateways. A failed audit append
+  refuses the operation. New value-free `OutboundError::code()`,
+  `InboundError::code()` and `InboundError::drop_reason_code()`.
+- Removed `der.rs`, `cbor.rs`, `engine.rs`, `mih.rs` and `pdq.rs`: they were never
+  declared as modules, never compiled, and needed undeclared dependencies.
+- rustfmt and clippy fixes; CI had been failing since the 0.7.0 commit.
+
+Migration:
+- `InboundGateway::accept` returns `ReplayProtectionNotConfigured` until
+  `with_replay_cache` is set. Share one `ReplayCache` per receiving route.
+- Events with `nonce == 0` or `timestamp_epoch_ms <= 0` are now rejected by both
+  gateways. Senders must use a random, non-zero nonce per event.
+- Envelopes older than the replay window (default 5 minutes) are rejected as
+  stale; retries beyond the window need a newly prepared event.
+- New `OutboundRejection` and `InboundError` variants; exhaustive matches need
+  updating.
+
+Not changed: no proto field-number or signature-format changes. None of this
+establishes DOJ, CFIUS, CAC or other regulatory approval.
+
 # 0.9.0
 
 Production-ready interfaces and known gaps (CAC / PIPL Art. 73 and NIST SP 800-188), 2026-11-04:

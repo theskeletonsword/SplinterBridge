@@ -176,7 +176,7 @@ region-local review workflow. Re-evaluate the exact event before a later export.
 | Model inference | Regional model, calibrated thresholds, adversarial multilingual evaluation, bounded worker capacity | Contract/client only; no model supplied |
 | Federation transport | Separate gRPC listener, authenticated mTLS peers, certificate rotation, authorization per route/event | Existing wire stubs only |
 | Durable dispatch | Local transactional outbox, per-destination approval state, retries with backoff, dead-letter handling | Not implemented |
-| Receiver persistence | Local inbox deduplication, replay windows, atomic apply + acknowledgement, idempotent writes | Not implemented |
+| Receiver persistence | Local inbox deduplication, replay windows, atomic apply + acknowledgement, idempotent writes | Single-process replay window only; no inbox persistence or idempotent apply |
 | Review state | Local retained candidate references, explicit review decisions, recheck on policy/model changes | Not implemented |
 | Isolation | No shared DB access, no peer-to-domestic services, no model network egress | Deployment controls required |
 | Operations | Key management, config rollout, quotas, aggregate value-free metrics, disaster recovery, policy rollback | Not implemented |

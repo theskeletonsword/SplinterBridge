@@ -197,9 +197,9 @@ database access to inspect it.
 | Individual controls | Required notices and consent/lawful-basis records; rights, minors and retention workflows | A public/private flag does not prove permission |
 | Separation and access | Regional identities, firewall tests, independent credentials, approved gateway-only routes, local-only model | Library cannot enforce cluster topology |
 | Confidentiality and integrity | mTLS peer validation, at-rest protection, key lifecycle/HSM design where chosen, rotation and incident recovery | Signatures implemented; federation transport/HSM absent |
-| Reliable delivery | Local outbox/inbox, replay defense, idempotency, revocation and deletion/retention handling | Not implemented |
+| Reliable delivery | Local outbox/inbox, replay defense, idempotency, revocation and deletion/retention handling | Single-process replay cache only; no outbox, inbox, revocation or deletion handling |
 | Moderation and model governance | Approved versioned policy, evaluated languages, local review/appeals and incident procedures | Example catalogs and a classifier interface only |
-| Monitoring | Aggregate value-free metrics; separate access-controlled statutory records and retention schedule | No complete operational audit system |
+| Monitoring | Aggregate value-free metrics; separate access-controlled statutory records and retention schedule | In-memory hash-chained decision log only; no durable record store, retention or access control |
 
 Use a region-local activation service to bind an approved route to its legal
 entities, purposes, allowed event/field set and current authorization evidence.
