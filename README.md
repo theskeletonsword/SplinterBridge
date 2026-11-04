@@ -18,7 +18,7 @@ and does not guarantee regulatory compliance, anonymity, or absence of personal 
 | `splinter-core` | Minimal projection, route opt-in, async semantic review gate, host-local gRPC classifier client, inbound verification, Ed25519 signatures |
 | `splinter-filter` | Route-specific literal matching with lowercase, fullwidth ASCII and common invisible/whitespace normalization |
 | `splinter-safety` | Local Hamming-distance comparison of supplied 256-bit fingerprints |
-| `splinter-core` (modules) | `ephemeral`: unlinkable ephemeral DIDs with rotating seeds and crypto-shredding; `differential_privacy`: Laplace/Gaussian noise, ε-counting and k-anonymity gates for aggregated metrics; `merkle`: local Merkle commitments binding an actor to a retained civil identity; `hsm`: HSM abstraction trait (`HsmSigner`, `SoftwareHsm`) for FIPS 140-3 / OSCCA GM/T key custody; `replay`: anti-replay sliding-window nonce cache (`ReplayCache`, `SlidingWindowReplayCache`); `rate_limit`: distributed backpressure and admission control (`RateLimiter`, `NoopRateLimiter`, `TokenBucket`); `outbox`: durable outbox/inbox interface traits (`Outbox`, `Inbox`, `NoopOutbox`, `NoopInbox`) for Kafka/Pulsar/Raft-backed delivery |
+| `splinter-core` (modules) | `ephemeral`: unlinkable ephemeral DIDs with rotating seeds and crypto-shredding; `differential_privacy`: Laplace/Gaussian noise, ε-counting and k-anonymity gates for aggregated metrics; `merkle`: local Merkle commitments binding an actor to a retained civil identity; `hsm`: HSM abstraction trait (`HsmSigner`, `SoftwareHsm`) for FIPS 140-3 / OSCCA GM/T key custody; `replay`: bounded sliding-window nonce cache required by `InboundGateway` (`ReplayCache`, `SlidingWindowReplayCache`, single process); `rate_limit`: per-key token bucket (`RateLimiter`, `NoopRateLimiter`, `TokenBucket`, single process); `audit_log`: SHA-256 hash-chained decision log with standalone verification (`AuditLog`, `HashChainedAuditLog`, `verify_records`); `killswitch`: gateway-wide stop with auditor-token rearm (`KillSwitch`, `AtomicKillSwitch`); `outbox`: durable outbox/inbox interface traits (`Outbox`, `Inbox`, `NoopOutbox`, `NoopInbox`) for Kafka/Pulsar/Raft-backed delivery |
 | `splinter-filter` (modules) | `catalog`: hot-reloadable regulatory catalog trait (`RegulatoryCatalog`, `AllowAllCatalog`) for zero-downtime CAC/RKN catalog updates |
 
 The facade crate `splinter-core` re-exports the other crates' APIs.
@@ -215,8 +215,11 @@ ID, public key and origin jurisdiction. It checks the receiving jurisdiction,
 verifies the envelope signature, decodes a bounded payload, rejects non-canonical
 or unknown payload fields and repeats the content checks. Notice codes must match
 the route, even for a valid signer. Unsupported hardware assertions are rejected,
-not accepted as verified. Accepted data is a public event projection, with no
-remote database handle or internal ID mapping.
+not accepted as verified. A replay cache is mandatory and the signed nonce and
+timestamp are checked last, so only fully valid envelopes consume a nonce.
+Optional rate limiting, audit logging and a kill switch can be attached. Accepted
+data is a public event projection, with no remote database handle or internal ID
+mapping.
 
 Run the local, data-only demonstration:
 
@@ -415,7 +418,13 @@ not a cryptographic zero-knowledge proof. There is no measured latency guarantee
 There is a host-local gRPC classifier client, but no model/inference server and no
 running federation gRPC service, mTLS configuration, transport dispatch loop,
 persistent storage, or connection to existing social platforms.
-Signatures alone do not prevent replay. These components must be implemented
+Signatures alone do not prevent replay, so `InboundGateway::accept` refuses every
+envelope until `with_replay_cache` is configured. It accepts an envelope only once
+per `(origin, destination, nonce)` and only while its signed timestamp is within
+the window (default 5 minutes); events with nonce 0 or no timestamp are invalid.
+`SlidingWindowReplayCache` covers one process: every instance accepting the same
+route must share one `ReplayCache` backend, and the window must exceed the
+sender's retry horizon. These components must be implemented
 and reviewed before production deployment. Use `OutboundGateway::prepare_local` (or the advanced `prepare`) to apply the
 current projection, text and media checks before signing. Calling the lower-level signer alone bypasses those checks. The helper
 rejects missing authors, inconsistent author jurisdictions, unspecified destinations,
@@ -425,25 +434,39 @@ free-form profile values contain no sensitive data, or that a policy decision
 matches every rule a regulator might impose. The example keyword lists remain
 incomplete; arbitrary disallowed content cannot be identified by those lists alone.
 
-The library supplies trait interfaces (not implementations) for the following
-production components, which the operator must wire to their own infrastructure:
+Single-process implementations are wired into the gateways. They are real and
+tested, but each one lives in memory and must be replaced by a shared or durable
+backend before a multi-instance deployment:
+
+| Component | Implementation | Gateway hook | Production backing |
+|---|---|---|---|
+| Anti-replay | `SlidingWindowReplayCache` (bounded, fails closed when full) | `InboundGateway::with_replay_cache` (required) | Redis/etcd/Cassandra shared nonce cache |
+| Rate limiting | `TokenBucket` (per trusted peer key, after signature check) | `InboundGateway::with_rate_limiter` | Distributed token bucket or edge proxy |
+| Audit log | `HashChainedAuditLog`, `verify_records` | `with_audit_log` on both gateways | WORM/append-only storage with the same hash format |
+| Kill switch | `AtomicKillSwitch` (rearm needs auditor token) | `with_kill_switch` on both gateways | Authenticated auditor control plane |
+
+The audit log records each export and acceptance decision as routing metadata
+plus a value-free code (`POLICY_KEYWORD`, `REPLAY_DETECTED`, ...): never content,
+handles, names or identifiers. If an append fails, the gateway refuses the
+export or acceptance. Each record is chained with SHA-256, and an auditor can
+re-check an export with `verify_records` without trusting the gateway. Removal
+of the newest records is detectable only if `head_hash()` is periodically
+anchored outside the operator's control. The in-memory log is lost on restart.
+
+The following remain trait interfaces only; the operator must supply them:
 
 | Component | Trait | Production backing |
 |---|---|---|
-| Anti-replay | `ReplayCache`, `SlidingWindowReplayCache` | Redis/etcd/Cassandra shared nonce cache |
-| Rate limiting | `RateLimiter`, `NoopRateLimiter`, `TokenBucket` | Distributed token bucket / sliding window |
-| HSM key custody | `HsmSigner`, `SoftwareHsm` | FIPS 140-3 / OSCCA GM/T HSM via PKCS#11 |
+| HSM key custody | `HsmSigner`, `SoftwareHsm` (software only, not wired into `OutboundGateway`) | FIPS 140-3 / OSCCA GM/T HSM via PKCS#11 |
 | Durable delivery | `Outbox`, `Inbox`, `NoopOutbox`, `NoopInbox` | Kafka, Pulsar or Raft-based replicated log |
 | Catalog sync | `RegulatoryCatalog`, `AllowAllCatalog` | Zero-downtime hot-reload from config service |
 | Content classification (DOJ) | `ContentClassifier`, `DenyAllClassifier`, `AllowExpressiveClassifier` | DOJ-reviewed expressive-material classifier |
 | PAFACA relationship check | `PaFacadeChecker`, `DenyAllPaFacade` | Operator legal-reviewed route relationship policy |
 | Remote attestation | `AttestationVerifier`, `DenyAllAttestation` | AMD SEV-SNP / Intel TDX fiduciary auditor |
-| Audit log | `AuditLog`, `NoopAuditLog` | Append-only tamper-evident log (CloudTrail, Azure Monitor, etc.) |
-| Kill-switch | `KillSwitch`, `DefaultKillSwitch` | DOJ/CFIUS monitor unilateral kill-switch panel |
 
-All new compliance modules default to **deny** until the operator wires their own
-production backend. See docs/PRODUCTION_REALITY.md for the five production
-barriers and the what-exists-vs-what-production-requires matrix.
+None of these components establish legal compliance or authorization with DOJ,
+CFIUS, CAC or any other authority. See docs/PRODUCTION_REALITY.md for the
+production barriers and the what-exists-vs-what-production-requires matrix.
 
 For detailed engineering guidance on cross-border data transfer mechanisms, 
 statutory threshold baselines (CAC 2024/2026, GDPR/EDPB 01/2020, US PAFACA/DOJ 28 CFR Part 202), 

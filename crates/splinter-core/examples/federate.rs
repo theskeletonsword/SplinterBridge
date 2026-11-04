@@ -11,6 +11,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::time::Duration::from_secs(1),
         10000,
     )?;
+    // One replay cache per receiving route and one audit log per gateway process.
+    let replay = SlidingWindowReplayCache::default();
+    let audit = HashChainedAuditLog::new();
     for (origin, destination) in [
         (Jurisdiction::GlobalGdpr, Jurisdiction::CnPiplCac),
         (Jurisdiction::CnPiplCac, Jurisdiction::GlobalGdpr),
@@ -62,7 +65,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             &safety,
         )?
         .with_route_policy(destination, ExportRoutePolicy::default())
-        .with_semantic_review(&review);
+        .with_semantic_review(&review)
+        .with_audit_log(&audit);
         let envelope = outbound
             .prepare_local(destination, &raw, &pepper, &draft)
             .await?;
@@ -72,8 +76,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             origin,
             public_key: signer.verifying_key().to_bytes(),
         };
-        let received =
-            InboundGateway::new(destination, &filter, &safety)?.accept(&envelope, &trusted)?;
+        let inbound = InboundGateway::new(destination, &filter, &safety)?
+            .with_replay_cache(&replay)
+            .with_audit_log(&audit);
+        let received = inbound.accept(&envelope, &trusted)?;
+        // Delivering the same signed envelope twice is rejected.
+        assert!(matches!(
+            inbound.accept(&envelope, &trusted),
+            Err(InboundError::Replay(ReplayCacheError::ReplayDetected))
+        ));
         for notice in received.notices {
             if let Some(text) = interaction_notice_en(notice) {
                 println!("{text}");
@@ -85,6 +96,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             profile.handle, profile.display_name, profile.followers_count, profile.is_private
         );
     }
+    // An auditor can re-verify the exported chain without trusting this process.
+    let records = audit.records();
+    verify_records(&records, None)?;
+    for r in &records {
+        println!(
+            "audit #{} {} {}->{} {} {}",
+            r.seq,
+            r.event_type,
+            r.origin,
+            r.destination,
+            r.outcome,
+            r.reason.as_deref().unwrap_or("-")
+        );
+    }
+    println!("audit head {}", audit.head_hash().unwrap_or_default());
     Ok(())
 }
 

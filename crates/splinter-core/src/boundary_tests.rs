@@ -76,9 +76,20 @@ impl Fixture {
             public_key: self.signer.verifying_key().to_bytes(),
         }
     }
+    /// Each call gets its own replay cache (leaked: test-only) on the fixture clock.
     fn inbound(&self, destination: Jurisdiction) -> InboundGateway<'_> {
+        let replay: &'static SlidingWindowReplayCache = Box::leak(Box::new(fixture_replay()));
+        self.inbound_without_replay(destination)
+            .with_replay_cache(replay)
+    }
+    fn inbound_without_replay(&self, destination: Jurisdiction) -> InboundGateway<'_> {
         InboundGateway::new(destination, &self.filter, &self.safety).unwrap()
     }
+}
+/// Fixture drafts are stamped at t = 1000 ms; the replay clock agrees.
+const FIXTURE_NOW_MS: i64 = 1_000;
+fn fixture_replay() -> SlidingWindowReplayCache {
+    SlidingWindowReplayCache::with_clock(300, 1024, || FIXTURE_NOW_MS)
 }
 fn raw(private: bool) -> RawInternalUserProfile {
     RawInternalUserProfile {
@@ -107,7 +118,7 @@ fn draft(kind: FederatedEventType, text: &str) -> LocalEventDraft {
             Some("SECRET-own-resource".into())
         },
         event_type: kind,
-        timestamp_epoch_ms: 1_000,
+        timestamp_epoch_ms: FIXTURE_NOW_MS,
         nonce: 1,
         text_content: text.into(),
         media_hashes: vec![],
@@ -833,4 +844,232 @@ async fn media_metadata_and_engagement_events_cannot_be_hidden_text_channels() {
         "INVALID_PROJECTION"
     );
     assert!(classifier.seen.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn receiver_requires_replay_protection_and_rejects_replays() {
+    let f = Fixture::new();
+    let e = f
+        .outbound(Global)
+        .prepare_local(China, &raw(false), &f.pepper, &draft(Comment, "hello"))
+        .await
+        .unwrap();
+    // Fail closed: no replay cache, no acceptance.
+    assert!(matches!(
+        f.inbound_without_replay(China).accept(&e, &f.peer(Global)),
+        Err(InboundError::ReplayProtectionNotConfigured)
+    ));
+    let replay = fixture_replay();
+    let inbound = f.inbound_without_replay(China).with_replay_cache(&replay);
+    inbound.accept(&e, &f.peer(Global)).unwrap();
+    let replayed = inbound.accept(&e, &f.peer(Global)).unwrap_err();
+    assert!(matches!(
+        replayed,
+        InboundError::Replay(ReplayCacheError::ReplayDetected)
+    ));
+    assert_eq!(replayed.code(), "REPLAY_DETECTED");
+    assert_eq!(
+        replayed.drop_reason_code(),
+        DropReasonCode::DropReasonReplayDetected
+    );
+    // A fresh nonce from the same sender is accepted.
+    let mut next = draft(Comment, "hello again");
+    next.nonce = 2;
+    let e2 = f
+        .outbound(Global)
+        .prepare_local(China, &raw(false), &f.pepper, &next)
+        .await
+        .unwrap();
+    inbound.accept(&e2, &f.peer(Global)).unwrap();
+}
+
+#[tokio::test]
+async fn receiver_rejects_stale_timestamps_and_unset_nonces() {
+    let f = Fixture::new();
+    let e = f
+        .outbound(Global)
+        .prepare_local(China, &raw(false), &f.pepper, &draft(Comment, "hello"))
+        .await
+        .unwrap();
+    // Receiver clock one hour after the event: outside the 5 minute window.
+    let late = SlidingWindowReplayCache::with_clock(300, 16, || FIXTURE_NOW_MS + 3_600_000);
+    assert!(matches!(
+        f.inbound_without_replay(China)
+            .with_replay_cache(&late)
+            .accept(&e, &f.peer(Global)),
+        Err(InboundError::Replay(ReplayCacheError::StaleTimestamp))
+    ));
+    // Unset nonce/timestamp are invalid on both sides, even when re-signed.
+    for (nonce, timestamp) in [(0, FIXTURE_NOW_MS), (1, 0)] {
+        let mut d = draft(Comment, "hello");
+        d.nonce = nonce;
+        d.timestamp_epoch_ms = timestamp;
+        assert!(f
+            .outbound(Global)
+            .prepare_local(China, &raw(false), &f.pepper, &d)
+            .await
+            .is_err());
+        let mut forged = e.clone();
+        let mut event = decode(&forged);
+        event.nonce = nonce;
+        event.timestamp_epoch_ms = timestamp;
+        resign(&f, &mut forged, event);
+        assert!(matches!(
+            f.inbound(China).accept(&forged, &f.peer(Global)),
+            Err(InboundError::Content(_))
+        ));
+    }
+}
+
+#[tokio::test]
+async fn receiver_rate_limits_each_trusted_peer_after_signature_checks() {
+    let f = Fixture::new();
+    let limiter = TokenBucket::new(1, 1);
+    let replay = fixture_replay();
+    let inbound = f
+        .inbound_without_replay(China)
+        .with_replay_cache(&replay)
+        .with_rate_limiter(&limiter);
+    let mut envelopes = vec![];
+    for nonce in [1, 2] {
+        let mut d = draft(Comment, "hello");
+        d.nonce = nonce;
+        envelopes.push(
+            f.outbound(Global)
+                .prepare_local(China, &raw(false), &f.pepper, &d)
+                .await
+                .unwrap(),
+        );
+    }
+    // A forged envelope fails the signature check without spending quota.
+    let mut forged = envelopes[0].clone();
+    forged.ed25519_signature[0] ^= 1;
+    assert!(matches!(
+        inbound.accept(&forged, &f.peer(Global)),
+        Err(InboundError::Signature(_))
+    ));
+    inbound.accept(&envelopes[0], &f.peer(Global)).unwrap();
+    assert!(matches!(
+        inbound.accept(&envelopes[1], &f.peer(Global)),
+        Err(InboundError::RateLimited { .. })
+    ));
+}
+
+#[tokio::test]
+async fn audit_log_records_value_free_decisions_on_both_gateways() {
+    let f = Fixture::new();
+    let log = HashChainedAuditLog::new();
+    let outbound = f.outbound(Global).with_audit_log(&log);
+    let e = outbound
+        .prepare_local(China, &raw(false), &f.pepper, &draft(Comment, "hello"))
+        .await
+        .unwrap();
+    assert!(outbound
+        .prepare_local(China, &raw(false), &f.pepper, &draft(Comment, "Tiananmen"))
+        .await
+        .is_err());
+    let replay = fixture_replay();
+    let inbound = f
+        .inbound_without_replay(China)
+        .with_replay_cache(&replay)
+        .with_audit_log(&log);
+    inbound.accept(&e, &f.peer(Global)).unwrap();
+    assert!(inbound.accept(&e, &f.peer(Global)).is_err());
+
+    let records = log.records();
+    let summary: Vec<_> = records
+        .iter()
+        .map(|r| {
+            (
+                r.event_type.as_str(),
+                r.outcome.as_str(),
+                r.reason.as_deref(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        summary,
+        vec![
+            ("envelope_export", "allowed", None),
+            ("envelope_export", "rejected", Some("POLICY_KEYWORD")),
+            ("envelope_accept", "allowed", None),
+            ("envelope_accept", "rejected", Some("REPLAY_DETECTED")),
+        ]
+    );
+    for r in &records {
+        assert_eq!((r.origin, r.destination), (Global as u32, China as u32));
+        assert_eq!(r.actor_key_id, "regional-key");
+    }
+    // Records carry codes only: no content, handles, names or local identifiers.
+    let dump = format!("{records:?}").to_lowercase();
+    for secret in ["tiananmen", "hello", "nickname", "public name", "secret"] {
+        assert!(!dump.contains(secret), "{secret}");
+    }
+    assert!(verify_records(&records, None).is_ok());
+    assert!(log.verify_chain(1, 4).unwrap());
+}
+
+#[tokio::test]
+async fn audit_failures_fail_closed() {
+    let f = Fixture::new();
+    let full = HashChainedAuditLog::with_max_records(1);
+    let outbound = f.outbound(Global).with_audit_log(&full);
+    outbound
+        .prepare_local(China, &raw(false), &f.pepper, &draft(Comment, "hello"))
+        .await
+        .unwrap();
+    // The log is full: a valid export is refused instead of leaving unrecorded.
+    let err = outbound
+        .prepare_local(China, &raw(false), &f.pepper, &draft(Comment, "hello"))
+        .await
+        .unwrap_err();
+    assert!(matches!(err.reason, OutboundRejection::AuditUnavailable));
+    assert_eq!(
+        err.review_json(),
+        serde_json::json!({"code": "AUDIT_UNAVAILABLE"})
+    );
+
+    let e = f
+        .outbound(Global)
+        .prepare_local(China, &raw(false), &f.pepper, &draft(Comment, "hello"))
+        .await
+        .unwrap();
+    assert!(matches!(
+        f.inbound(China)
+            .with_audit_log(&full)
+            .accept(&e, &f.peer(Global)),
+        Err(InboundError::AuditUnavailable)
+    ));
+}
+
+#[tokio::test]
+async fn kill_switch_stops_both_gateways_until_the_auditor_rearms() {
+    let f = Fixture::new();
+    let ks = AtomicKillSwitch::from_token("auditor-token");
+    let outbound = f.outbound(Global).with_kill_switch(&ks);
+    let e = outbound
+        .prepare_local(China, &raw(false), &f.pepper, &draft(Comment, "hello"))
+        .await
+        .unwrap();
+    ks.trip().unwrap();
+    let err = outbound
+        .prepare_local(China, &raw(false), &f.pepper, &draft(Comment, "hello"))
+        .await
+        .unwrap_err();
+    assert!(matches!(err.reason, OutboundRejection::KillSwitchTripped));
+    assert!(!err.policy_notices().is_empty());
+    assert!(outbound.prepare(China, &decode(&e)).await.is_err());
+    let replay = fixture_replay();
+    let inbound = f
+        .inbound_without_replay(China)
+        .with_replay_cache(&replay)
+        .with_kill_switch(&ks);
+    assert!(matches!(
+        inbound.accept(&e, &f.peer(Global)),
+        Err(InboundError::KillSwitchTripped)
+    ));
+    assert!(ks.rearm("wrong").is_err());
+    ks.rearm("auditor-token").unwrap();
+    inbound.accept(&e, &f.peer(Global)).unwrap();
+    assert!(outbound.prepare(China, &decode(&e)).await.is_ok());
 }

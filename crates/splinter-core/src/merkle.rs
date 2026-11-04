@@ -35,8 +35,8 @@ impl CommitmentTree {
     fn leaf_hash(leaf: &CommitmentLeaf) -> [u8; 32] {
         let mut hasher = Sha256::new();
         hasher.update(b"splinterbridge:merkle:leaf:v1\0");
-        hasher.update(&leaf.civil_id_commitment);
-        hasher.update(&leaf.actor_public_key);
+        hasher.update(leaf.civil_id_commitment);
+        hasher.update(leaf.actor_public_key);
         hasher.finalize().into()
     }
 

@@ -44,7 +44,10 @@ pub enum ContentClassification {
 /// - Return `Unclassified` (block) when uncertain — fail-closed.
 pub trait ContentClassifier: Send + Sync {
     /// Classifies `content` for cross-border egress under DOJ rules.
-    fn classify(&self, content: &CandidateContent) -> Result<ContentClassification, DojComplianceError>;
+    fn classify(
+        &self,
+        content: &CandidateContent,
+    ) -> Result<ContentClassification, DojComplianceError>;
 }
 
 /// Minimal representation of a candidate outbound payload for DOJ review.
@@ -64,7 +67,10 @@ pub struct CandidateContent {
 pub struct DenyAllClassifier;
 
 impl ContentClassifier for DenyAllClassifier {
-    fn classify(&self, _content: &CandidateContent) -> Result<ContentClassification, DojComplianceError> {
+    fn classify(
+        &self,
+        _content: &CandidateContent,
+    ) -> Result<ContentClassification, DojComplianceError> {
         Err(DojComplianceError::NotExpressiveMaterial)
     }
 }
@@ -80,7 +86,10 @@ impl Default for DenyAllClassifier {
 pub struct AllowExpressiveClassifier;
 
 impl ContentClassifier for AllowExpressiveClassifier {
-    fn classify(&self, content: &CandidateContent) -> Result<ContentClassification, DojComplianceError> {
+    fn classify(
+        &self,
+        content: &CandidateContent,
+    ) -> Result<ContentClassification, DojComplianceError> {
         if content.has_behavioral_signal || content.has_private_graph {
             return Err(DojComplianceError::BulkSensitiveData);
         }
@@ -93,7 +102,11 @@ impl ContentClassifier for AllowExpressiveClassifier {
 pub trait PaFacadeChecker: Send + Sync {
     /// Returns `Ok(())` if the route is a content-only syndication (RSS-like)
     /// and not a recommendation-algorithm sharing relationship.
-    fn check_route_relationship(&self, origin: Jurisdiction, destination: Jurisdiction) -> Result<(), DojComplianceError>;
+    fn check_route_relationship(
+        &self,
+        origin: Jurisdiction,
+        destination: Jurisdiction,
+    ) -> Result<(), DojComplianceError>;
 }
 
 /// Default PAFACA checker: denies all cross-border routes until explicitly
@@ -101,7 +114,11 @@ pub trait PaFacadeChecker: Send + Sync {
 pub struct DenyAllPaFacade;
 
 impl PaFacadeChecker for DenyAllPaFacade {
-    fn check_route_relationship(&self, _origin: Jurisdiction, _destination: Jurisdiction) -> Result<(), DojComplianceError> {
+    fn check_route_relationship(
+        &self,
+        _origin: Jurisdiction,
+        _destination: Jurisdiction,
+    ) -> Result<(), DojComplianceError> {
         Err(DojComplianceError::OperationalRelationshipProhibited)
     }
 }

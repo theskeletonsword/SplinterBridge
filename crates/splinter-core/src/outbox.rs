@@ -112,6 +112,8 @@ mod tests {
     fn noop_inbox_records_receipt() {
         let inbox = NoopInbox;
         assert!(inbox.record_receipt(1).unwrap());
-        assert!(inbox.store_response(1, &FederatedEventResponse::default()).is_ok());
+        assert!(inbox
+            .store_response(1, &FederatedEventResponse::default())
+            .is_ok());
     }
 }

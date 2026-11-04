@@ -309,13 +309,7 @@ mod tests {
             Err(IdentityError::EmptyUserId)
         ));
         assert!(matches!(
-            EphemeralSession::new(
-                "",
-                Jurisdiction::GlobalGdpr,
-                0,
-                &pepper,
-                &mut [0u8; 16]
-            ),
+            EphemeralSession::new("", Jurisdiction::GlobalGdpr, 0, &pepper, &mut [0u8; 16]),
             Err(IdentityError::EmptyUserId)
         ));
         assert!(matches!(

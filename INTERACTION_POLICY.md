@@ -62,8 +62,8 @@ stored projections, without querying the originating database.
 
 The catalog is an illustrative keyword list. It does not cover all possible
 restrictions, perform semantic classification, or guarantee regulatory approval.
-Each platform's other policies remain independent. Transport security, replay
-protection, network isolation, local storage permissions, and UI integration
+Each platform's other policies remain independent. Transport security, shared
+(multi-instance) replay protection, network isolation, local storage permissions, and UI integration
 require deployment work.
 
 

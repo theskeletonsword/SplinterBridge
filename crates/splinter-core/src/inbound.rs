@@ -26,6 +26,54 @@ pub enum InboundError {
     InvalidNotices,
     #[error("Optional public profile fields were not approved by this receiver")]
     UnapprovedProfileFields,
+    #[error("No replay cache configured; refusing to accept envelopes")]
+    ReplayProtectionNotConfigured,
+    #[error(transparent)]
+    Replay(#[from] ReplayCacheError),
+    #[error("Peer rate limit exceeded; retry after {retry_after_ms} ms")]
+    RateLimited { retry_after_ms: u64 },
+    #[error("Rate limiter unavailable")]
+    RateLimiterUnavailable,
+    #[error("Kill switch tripped")]
+    KillSwitchTripped,
+    #[error("Audit log unavailable")]
+    AuditUnavailable,
+}
+
+impl InboundError {
+    /// Value-free rejection code, also used in audit records.
+    pub fn code(&self) -> &'static str {
+        match self {
+            InboundError::UntrustedRoute => "UNTRUSTED_ROUTE",
+            InboundError::InvalidPayload => "INVALID_PAYLOAD",
+            InboundError::UnsupportedAttestation => "UNSUPPORTED_ATTESTATION",
+            InboundError::Signature(_) => "INVALID_SIGNATURE",
+            InboundError::Content(e) => e.code(),
+            InboundError::InvalidNotices => "INVALID_NOTICES",
+            InboundError::UnapprovedProfileFields => "UNKNOWN_FIELD",
+            InboundError::ReplayProtectionNotConfigured => "REPLAY_PROTECTION_NOT_CONFIGURED",
+            InboundError::Replay(ReplayCacheError::ReplayDetected) => "REPLAY_DETECTED",
+            InboundError::Replay(ReplayCacheError::StaleTimestamp) => "STALE_TIMESTAMP",
+            InboundError::Replay(_) => "REPLAY_CACHE_UNAVAILABLE",
+            InboundError::RateLimited { .. } => "RATE_LIMITED",
+            InboundError::RateLimiterUnavailable => "RATE_LIMITER_UNAVAILABLE",
+            InboundError::KillSwitchTripped => "KILL_SWITCH_TRIPPED",
+            InboundError::AuditUnavailable => "AUDIT_UNAVAILABLE",
+        }
+    }
+
+    /// Wire drop reason for a `FederatedEventResponse`.
+    pub fn drop_reason_code(&self) -> DropReasonCode {
+        match self {
+            InboundError::Signature(_) => DropReasonCode::DropReasonInvalidOriginSignature,
+            InboundError::UnsupportedAttestation => {
+                DropReasonCode::DropReasonAttestationVerificationFailed
+            }
+            InboundError::Replay(_) => DropReasonCode::DropReasonReplayDetected,
+            InboundError::Content(e) => e.drop_reason_code(),
+            _ => DropReasonCode::DropReasonJurisdictionPolicyViolation,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -34,13 +82,18 @@ pub struct AcceptedEvent {
     pub notices: Vec<InteractionNotice>,
 }
 
-/// Verifies projections only. Callers must still enforce replay protection,
-/// authenticated transport, local storage authorization and UI display.
+/// Verifies projections and rejects replays. A replay cache is required:
+/// `accept` fails closed without one. Callers must still provide authenticated
+/// transport, local storage authorization and UI display.
 pub struct InboundGateway<'a> {
     local: Jurisdiction,
     filter: &'a PreflightEgressFilter,
     safety: &'a StopNciiEngine,
     profile_options: PublicProfileOptions,
+    replay: Option<&'a dyn ReplayCache>,
+    rate_limiter: Option<&'a dyn RateLimiter>,
+    audit: Option<&'a dyn AuditLog>,
+    kill_switch: Option<&'a dyn KillSwitch>,
 }
 impl<'a> InboundGateway<'a> {
     pub fn new(
@@ -56,6 +109,10 @@ impl<'a> InboundGateway<'a> {
             filter,
             safety,
             profile_options: PublicProfileOptions::default(),
+            replay: None,
+            rate_limiter: None,
+            audit: None,
+            kill_switch: None,
         })
     }
 
@@ -65,11 +122,72 @@ impl<'a> InboundGateway<'a> {
         self
     }
 
+    /// Required. Every gateway instance accepting the same route must share it.
+    pub fn with_replay_cache(mut self, replay: &'a dyn ReplayCache) -> Self {
+        self.replay = Some(replay);
+        self
+    }
+
+    /// Limits accepted envelopes per trusted peer key. The check runs after the
+    /// signature is verified, so unauthenticated traffic cannot drain a peer's
+    /// quota; unauthenticated floods belong at the transport or network edge.
+    pub fn with_rate_limiter(mut self, limiter: &'a dyn RateLimiter) -> Self {
+        self.rate_limiter = Some(limiter);
+        self
+    }
+
+    /// Records every accept decision (codes only, never content). If an append
+    /// fails, the envelope is rejected.
+    pub fn with_audit_log(mut self, audit: &'a dyn AuditLog) -> Self {
+        self.audit = Some(audit);
+        self
+    }
+
+    /// While the switch is tripped every envelope is rejected before any work.
+    pub fn with_kill_switch(mut self, kill_switch: &'a dyn KillSwitch) -> Self {
+        self.kill_switch = Some(kill_switch);
+        self
+    }
+
     pub fn accept(
         &self,
         envelope: &FederatedEventEnvelope,
         trusted: &TrustedGateway,
     ) -> Result<AcceptedEvent, InboundError> {
+        let result = self.accept_unaudited(envelope, trusted);
+        let Some(log) = self.audit else {
+            return result;
+        };
+        let (outcome, reason) = match &result {
+            Ok(_) => ("allowed", None),
+            Err(e) => ("rejected", Some(e.code())),
+        };
+        let record = AuditRecord::new(
+            "envelope_accept",
+            trusted.origin as u32,
+            self.local as u32,
+            &trusted.key_id,
+            outcome,
+            reason,
+        );
+        match (log.append(&record), result) {
+            (Ok(_), result) => result,
+            (Err(_), Ok(_)) => Err(InboundError::AuditUnavailable),
+            (Err(_), Err(e)) => Err(e),
+        }
+    }
+
+    fn accept_unaudited(
+        &self,
+        envelope: &FederatedEventEnvelope,
+        trusted: &TrustedGateway,
+    ) -> Result<AcceptedEvent, InboundError> {
+        if matches!(self.kill_switch, Some(ks) if ks.status() != KillSwitchStatus::Armed) {
+            return Err(InboundError::KillSwitchTripped);
+        }
+        let replay = self
+            .replay
+            .ok_or(InboundError::ReplayProtectionNotConfigured)?;
         if envelope.encoded_len() > MAX_EVENT_BYTES + 4096 {
             return Err(InboundError::InvalidPayload);
         }
@@ -82,6 +200,15 @@ impl<'a> InboundGateway<'a> {
             return Err(InboundError::UntrustedRoute);
         }
         GatewayVerifier::verify_envelope(&trusted.public_key, envelope)?;
+        if let Some(limiter) = self.rate_limiter {
+            match limiter.check(&trusted.key_id) {
+                Ok(RateLimitVerdict::Allow) => {}
+                Ok(RateLimitVerdict::RetryAfter { retry_after_ms }) => {
+                    return Err(InboundError::RateLimited { retry_after_ms });
+                }
+                Err(_) => return Err(InboundError::RateLimiterUnavailable),
+            }
+        }
         if envelope.humanity_attestation.is_some() {
             return Err(InboundError::UnsupportedAttestation);
         }
@@ -108,6 +235,14 @@ impl<'a> InboundGateway<'a> {
         {
             return Err(InboundError::UnapprovedProfileFields);
         }
+        // Last step: only fully valid envelopes consume a nonce. Nonce and
+        // timestamp are inside the signed payload, so they cannot be swapped.
+        replay.check_and_record(
+            trusted.origin as u32,
+            self.local as u32,
+            event.nonce,
+            event.timestamp_epoch_ms,
+        )?;
         Ok(AcceptedEvent {
             payload: event,
             notices,

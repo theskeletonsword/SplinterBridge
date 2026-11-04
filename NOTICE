@@ -78,7 +78,8 @@ in China, the United States, Europe or elsewhere. Operators remain responsible
 for assessing their own deployment and data flows. Transport security, trust provisioning, network isolation and platform UI
 integration are not supplied as a complete deployed service by this repository.
 The included inbound checks authenticate and bind a configured peer to a region;
-they do not replace authenticated transport or replay protection.
+they do not replace authenticated transport, and the built-in replay cache
+covers a single gateway process only.
 
 This section describes intended architecture and implementation scope only.
 It does not modify the Apache License, Version 2.0, or add license conditions.

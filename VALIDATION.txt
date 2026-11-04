@@ -1,273 +1,142 @@
-SplinterBridge 0.6.0 validation
-2026-11-04T19:25:36.119317+00:00
-rustc 1.99.1 (58cf8f9c3 2026-10-13)
-cargo 1.99.1 (5f94df478 2026-08-27)
-The OS Unix-socket integration test was attempted and blocked by the environment at UnixListener::bind (EPERM). It is explicitly ignored in the default suite and explicitly enabled in Linux CI. CI itself was not run here. gRPC framing/deadlines/size limits are tested over in-memory I/O. No trained model, model quality evaluation, production load test, federation network or database integration was exercised.
+SplinterBridge validation record (unreleased, workspace version 0.9.0)
+2026-11-04T21:38:35Z
+Code revision: 70b1dd1 (last commit touching crates/, proto/ or Cargo files)
+rustc 1.97.0 (2d8144b78 2026-07-07)
+cargo 1.97.0 (c980f4866 2026-06-30)
+Generated locally by running the same steps as .github/workflows/ci.yml. GitHub
+Actions results for the pushed commit are the authoritative CI record. Compiler
+progress lines are omitted. Not exercised: trained models, multi-instance or
+persistent replay/audit backends, transport security, load or capacity, real
+federation networks or databases. Passing these checks does not establish
+DOJ, CFIUS, CAC or any other regulatory approval.
 
 $ cargo fmt --all -- --check
 Exit status: 0
 
-$ cargo test --workspace --locked --offline
-   Compiling splinter-core v0.6.0 (/workspace/scratch/bfe77a764fc1/work/SplinterBridge-main/crates/splinter-core)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.69s
-     Running unittests src/lib.rs (target/debug/deps/splinter_core-5c76aa3ececd3bd0)
+$ cargo clippy --workspace --all-targets --locked -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.17s
+Exit status: 0
 
-running 30 tests
+$ cargo test --workspace --locked
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.14s
+running 72 tests
+test attestation::tests::deny_all_rejects_attestation ... ok
+test audit_log::tests::hash_depends_on_field_boundaries ... ok
+test audit_log::tests::full_log_refuses_appends ... ok
+test audit_log::tests::exported_records_detect_edits_deletions_and_reordering ... ok
+test audit_log::tests::noop_audit_log_cannot_claim_verification ... ok
+test audit_log::tests::log_assigns_sequence_and_links_hashes ... ok
+test boundary_tests::audit_failures_fail_closed ... ok
+test boundary_tests::default_gateway_requires_route_then_classifier ... ok
+test boundary_tests::audit_log_records_value_free_decisions_on_both_gateways ... ok
+test boundary_tests::invalid_private_unapproved_or_keyword_blocked_events_never_reach_model ... ok
+test boundary_tests::media_metadata_and_engagement_events_cannot_be_hidden_text_channels ... ok
+test boundary_tests::kill_switch_stops_both_gateways_until_the_auditor_rearms ... ok
 test boundary_tests::model_parser_rejects_unknown_keys_duplicate_keys_and_values_without_echo ... ok
 test boundary_tests::opaque_references_are_stable_scoped_and_do_not_disclose_local_ids ... ok
-test boundary_tests::default_gateway_requires_route_then_classifier ... ok
-test boundary_tests::media_metadata_and_engagement_events_cannot_be_hidden_text_channels ... ok
-test boundary_tests::invalid_private_unapproved_or_keyword_blocked_events_never_reach_model ... ok
 test boundary_tests::optional_fields_and_content_permissions_are_scoped_to_destination ... ok
+test boundary_tests::media_validation_and_notices_apply_to_all_failures ... ok
 test boundary_tests::optional_public_fields_require_explicit_opt_in ... ok
 test boundary_tests::private_posts_and_disguised_profile_content_are_rejected ... ok
 test boundary_tests::profile_fields_cannot_bypass_route_policy ... ok
-test boundary_tests::media_validation_and_notices_apply_to_all_failures ... ok
-test boundary_tests::receiver_binds_trust_to_origin_destination_and_key ... ok
-test boundary_tests::receiver_rejects_hidden_unknown_payload_fields_and_oversize ... ok
-test boundary_tests::receiver_must_explicitly_approve_optional_public_fields ... ok
-test boundary_tests::reviewer_receives_only_candidate_text_and_json_output_has_closed_allowlist ... ok
-test boundary_tests::receiver_rechecks_content_and_both_endpoints_even_for_a_valid_signer ... ok
 test boundary_tests::all_four_routes_enforce_policy_and_leave_the_local_event_intact ... ok
-test identity::tests::test_blind_did_is_deterministic_and_irreversible ... ok
 test boundary_tests::concurrency_is_bounded_and_timeout_releases_capacity ... ok
+test boundary_tests::receiver_binds_trust_to_origin_destination_and_key ... ok
+test boundary_tests::receiver_must_explicitly_approve_optional_public_fields ... ok
+test boundary_tests::receiver_rate_limits_each_trusted_peer_after_signature_checks ... ok
+test boundary_tests::receiver_rechecks_content_and_both_endpoints_even_for_a_valid_signer ... ok
 test boundary_tests::public_fields_roundtrip_in_both_directions_for_public_and_private_accounts ... ok
+test boundary_tests::receiver_rejects_hidden_unknown_payload_fields_and_oversize ... ok
+test boundary_tests::receiver_rejects_stale_timestamps_and_unset_nonces ... ok
+test boundary_tests::receiver_rejects_removed_or_forged_notices_even_when_resigned ... ok
+test boundary_tests::reviewer_receives_only_candidate_text_and_json_output_has_closed_allowlist ... ok
+test boundary_tests::receiver_requires_replay_protection_and_rejects_replays ... ok
+test boundary_tests::replies_resolve_federated_resources_without_shared_ids_or_keys ... ok
+test differential_privacy::tests::generalize_followers_count_buckets_to_k ... ok
+test differential_privacy::tests::k_anonymous_suppresses_small_buckets ... ok
+test differential_privacy::tests::noisy_count_is_randomized ... ok
+test differential_privacy::tests::noisy_count_respects_epsilon ... ok
+test differential_privacy::tests::validates_inputs ... ok
+test doj_compliance::tests::allow_expressive_blocks_behavioral_signals ... ok
+test doj_compliance::tests::deny_all_classifier_blocks_everything ... ok
+test doj_compliance::tests::deny_all_pafacda_blocks_all_routes ... ok
+test ephemeral::tests::ephemeral_did_is_stable_within_epoch_and_unlinkable_across_epochs ... ok
+test ephemeral::tests::rejects_invalid_inputs ... ok
+test ephemeral::tests::sessions_in_same_epoch_are_unlinkable ... ok
+test ephemeral::tests::vault_rotates_and_shreds_superseded_keys ... ok
+test boundary_tests::uncertainty_errors_low_confidence_and_malformed_reports_never_sign ... ok
+test identity::tests::test_blind_did_is_deterministic_and_irreversible ... ok
+test boundary_tests::unsupported_hardware_assertions_are_not_silently_trusted ... ok
 test identity::tests::test_identity_input_validation_and_region_isolation ... ok
 test identity::tests::test_project_blind_profile_scrubs_pii ... ok
-test boundary_tests::uncertainty_errors_low_confidence_and_malformed_reports_never_sign ... ok
-test local_classifier::tests::unix_transport_checks_peer_uid_deadlines_size_and_redacts_failures ... ignored, Requires OS Unix-domain sockets; run explicitly in Linux CI
-test boundary_tests::replies_resolve_federated_resources_without_shared_ids_or_keys ... ok
-test boundary_tests::receiver_rejects_removed_or_forged_notices_even_when_resigned ... ok
-test boundary_tests::unsupported_hardware_assertions_are_not_silently_trusted ... ok
+test hsm::tests::software_hsm_sign_and_verify ... ok
+test killswitch::tests::atomic_killswitch_trips_and_only_the_auditor_token_rearms ... ok
+test killswitch::tests::default_killswitch_is_armed_and_cannot_trip ... ok
 test boundary_tests::receiver_rejects_internal_ids_invalid_author_and_private_content ... ok
+test local_classifier::tests::unix_transport_checks_peer_uid_deadlines_size_and_redacts_failures ... ignored, Requires OS Unix-domain sockets; run explicitly in Linux CI
+test merkle::tests::commitment_hash_binds_both_inputs ... ok
+test merkle::tests::empty_tree_has_a_defined_root ... ok
+test merkle::tests::root_is_deterministic_and_sensitive_to_leaves ... ok
+test outbox::tests::noop_inbox_records_receipt ... ok
+test outbox::tests::noop_outbox_enqueue_and_ack ... ok
+test rate_limit::tests::bucket_drains_then_refills_over_time ... ok
+test rate_limit::tests::keys_are_independent_and_clock_steps_back_do_not_refill ... ok
+test rate_limit::tests::noop_allows_everything ... ok
+test rate_limit::tests::tracked_keys_are_bounded ... ok
+test replay::tests::concurrent_copies_are_accepted_exactly_once ... ok
+test replay::tests::default_window_is_five_minutes ... ok
+test replay::tests::evicted_nonces_cannot_be_replayed_even_after_a_clock_step_back ... ok
+test replay::tests::full_cache_fails_closed_until_entries_expire ... ok
+test replay::tests::same_nonce_is_rejected_but_scoped_per_route ... ok
+test replay::tests::timestamps_outside_the_window_are_stale ... ok
 test identity::tests::test_signature_and_verification_lifecycle ... ok
 test identity::tests::test_envelope_integrity ... ok
 test local_classifier::tests::grpc_in_memory_validates_reports_limits_errors_and_deadlines ... ok
-
-test result: ok. 29 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.17s
-
-     Running unittests src/lib.rs (target/debug/deps/splinter_filter-556aadb25d55386b)
-
-running 7 tests
-test tests::interaction_matrix_is_symmetric_for_china_and_leaves_overseas_free ... ok
-test tests::test_cross_border_isolation ... ok
-test tests::test_benign_content_passes_cac ... ok
+test result: ok. 71 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.27s
+running 10 tests
+test catalog::tests::allow_all_catalog_never_matches ... ok
 test tests::matching_copy_normalizes_common_variants_and_errors_are_value_free ... ok
+test tests::interaction_matrix_is_symmetric_for_china_and_leaves_overseas_free ... ok
+test tests::scan_direct_pii_handles_multibyte_text_without_panicking ... ok
+test tests::scan_direct_pii_blocks_identifiers_without_echoing_them ... ok
+test tests::test_benign_content_passes_cac ... ok
 test tests::test_cac_prohibited_terms_intercepted ... ok
-test tests::test_rkn_prohibited_terms_intercepted ... ok
+test tests::test_cross_border_isolation ... ok
 test tests::test_cyrillic_case_variants ... ok
-
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
-
-     Running unittests src/lib.rs (target/debug/deps/splinter_proto-e595a28bf608a580)
-
-running 0 tests
-
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-
-     Running unittests src/lib.rs (target/debug/deps/splinter_safety-bf5b3128be8be1f4)
-
+test tests::test_rkn_prohibited_terms_intercepted ... ok
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 running 5 tests
-test tests::test_hamming_distance_exact_match ... ok
-test tests::test_hamming_distance_differing_bits ... ok
 test tests::test_stopncii_allows_clean_media ... ok
+test tests::test_hamming_distance_exact_match ... ok
 test tests::test_stopncii_hot_discard_within_threshold ... ok
 test tests::test_threshold_boundary_and_invalid_length ... ok
-
+test tests::test_hamming_distance_differing_bits ... ok
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-
-   Doc-tests splinter_core
-
-running 0 tests
-
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-
-   Doc-tests splinter_filter
-
-running 0 tests
-
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-
-   Doc-tests splinter_proto
-
-running 0 tests
-
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-
-   Doc-tests splinter_safety
-
-running 0 tests
-
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-
 Exit status: 0
 
-$ cargo clippy --workspace --all-targets --locked --offline -- -D warnings
-    Checking splinter-core v0.6.0 (/workspace/scratch/bfe77a764fc1/work/SplinterBridge-main/crates/splinter-core)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.79s
+$ cargo test --workspace --locked -- --ignored
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+running 1 test
+test local_classifier::tests::unix_transport_checks_peer_uid_deadlines_size_and_redacts_failures ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.11s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
 Exit status: 0
 
-$ cargo build --release --locked --offline
-   Compiling proc-macro2 v1.0.107
-   Compiling unicode-ident v1.0.27
-   Compiling quote v1.0.47
-   Compiling libc v0.2.191
-   Compiling cfg-if v1.0.5
-   Compiling pin-project-lite v0.2.17
-   Compiling bytes v1.12.1
-   Compiling futures-core v0.3.34
-   Compiling parking_lot_core v0.9.12
-   Compiling smallvec v1.16.4
-   Compiling anyhow v1.0.104
-   Compiling scopeguard v1.2.0
-   Compiling lock_api v0.4.14
-   Compiling either v1.19.0
-   Compiling itoa v1.0.18
-   Compiling once_cell v1.21.4
-   Compiling itertools v0.14.0
-   Compiling slab v0.4.12
-   Compiling shlex v2.0.1
-   Compiling find-msvc-tools v0.1.15
-   Compiling log v0.4.35
-   Compiling futures-task v0.3.34
-   Compiling serde_core v1.0.229
-   Compiling http v1.5.0
-   Compiling cc v1.11.0
-   Compiling syn v2.0.119
-   Compiling syn v3.0.9
-   Compiling zeroize v1.9.1
-   Compiling subtle v2.6.1
-   Compiling futures-util v0.3.34
-   Compiling tracing-core v0.1.36
-   Compiling errno v0.3.14
-   Compiling parking_lot v0.12.5
-   Compiling signal-hook-registry v1.4.8
-   Compiling getrandom v0.2.17
-   Compiling mio v1.2.4
-   Compiling socket2 v0.6.5
-   Compiling ring v0.17.14
-   Compiling http-body v1.1.0
-   Compiling futures-sink v0.3.34
-   Compiling version_check v0.9.5
-   Compiling tower-service v0.3.3
-   Compiling getrandom v0.4.3
-   Compiling rustix v1.1.6
-   Compiling zerocopy v0.8.63
-   Compiling generic-array v0.14.7
-   Compiling linux-raw-sys v0.12.1
-   Compiling bitflags v2.13.2
-   Compiling equivalent v1.0.3
-   Compiling prettyplease v0.2.37
-   Compiling regex-syntax v0.8.11
-   Compiling serde v1.0.229
-   Compiling hashbrown v0.17.1
-   Compiling httparse v1.10.1
-   Compiling indexmap v2.14.2
-   Compiling regex-automata v0.4.18
-   Compiling tokio-macros v2.7.2
-   Compiling serde_derive v1.0.229
-   Compiling tokio v1.54.1
-   Compiling prost-derive v0.13.5
-   Compiling tracing-attributes v0.1.31
-   Compiling rand_core v0.6.4
-   Compiling rustls-pki-types v1.15.1
-   Compiling tracing v0.1.44
-   Compiling prost v0.13.5
-   Compiling rustversion v1.0.23
-   Compiling tower-layer v0.3.3
-   Compiling fastrand v2.5.0
-   Compiling fixedbitset v0.5.7
-   Compiling atomic-waker v1.1.2
-   Compiling typenum v1.20.1
-   Compiling try-lock v0.2.5
-   Compiling fnv v1.0.7
-   Compiling untrusted v0.9.0
-   Compiling autocfg v1.5.1
-   Compiling petgraph v0.7.1
-   Compiling tempfile v3.27.0
-   Compiling want v0.3.2
-   Compiling indexmap v1.9.3
-   Compiling prost-types v0.13.5
-   Compiling regex v1.13.1
-   Compiling futures-channel v0.3.34
-   Compiling rustls v0.23.46
-   Compiling sync_wrapper v1.0.2
-   Compiling heck v0.5.0
-   Compiling memchr v2.8.3
-   Compiling httpdate v1.0.3
-   Compiling multimap v0.10.1
-   Compiling pin-project-internal v1.1.13
-   Compiling prost-build v0.13.5
-   Compiling async-trait v0.1.92
-   Compiling http-body-util v0.1.5
-   Compiling protoc-bin-vendored-linux-x86_64 v3.3.0
-   Compiling protoc-bin-vendored-linux-s390_64 v3.3.0
-   Compiling ppv-lite86 v0.2.21
-   Compiling mime v0.3.17
-   Compiling protoc-bin-vendored-win32 v3.3.0
-   Compiling protoc-bin-vendored-macos-aarch_64 v3.3.0
-   Compiling protoc-bin-vendored-linux-x86_32 v3.3.0
-   Compiling rand_chacha v0.3.1
-   Compiling protoc-bin-vendored-linux-aarch_64 v3.3.0
-   Compiling protoc-bin-vendored-linux-ppcle_64 v3.3.0
-   Compiling protoc-bin-vendored-macos-x86_64 v3.3.0
-   Compiling hashbrown v0.12.3
-   Compiling protoc-bin-vendored v3.3.0
-   Compiling axum-core v0.4.5
-   Compiling pin-project v1.1.13
-   Compiling tonic-build v0.12.3
-   Compiling tower v0.5.3
-   Compiling rand v0.8.8
-   Compiling crypto-common v0.1.7
-   Compiling block-buffer v0.10.4
-   Compiling tokio-util v0.7.20
-   Compiling async-stream-impl v0.3.6
-   Compiling matchit v0.7.3
-   Compiling semver v1.0.28
-   Compiling percent-encoding v2.3.2
-   Compiling h2 v0.4.20
-   Compiling rustc_version v0.4.1
-   Compiling async-stream v0.3.6
-   Compiling tower v0.4.13
-   Compiling splinter-proto v0.6.0 (/workspace/scratch/bfe77a764fc1/work/SplinterBridge-main/crates/splinter-proto)
-   Compiling digest v0.10.7
-   Compiling tokio-stream v0.1.19
-   Compiling rustls-pemfile v2.2.0
-   Compiling rustls-webpki v0.103.16
-   Compiling axum v0.7.9
-   Compiling socket2 v0.5.10
-   Compiling thiserror v1.0.69
-   Compiling base64 v0.22.1
-   Compiling curve25519-dalek v4.1.3
-   Compiling thiserror-impl v1.0.69
-   Compiling zmij v1.0.23
-   Compiling cpufeatures v0.2.17
-   Compiling curve25519-dalek-derive v0.1.1
-   Compiling signature v2.2.0
-   Compiling serde_json v1.0.154
-   Compiling ed25519 v2.2.3
-   Compiling sha2 v0.10.9
-   Compiling aho-corasick v1.1.5
-   Compiling hex v0.4.3
-   Compiling ed25519-dalek v2.2.0
-   Compiling hyper v1.12.0
-   Compiling hmac v0.12.1
-   Compiling tokio-rustls v0.26.6
-   Compiling hyper-util v0.1.21
-   Compiling hyper-timeout v0.5.2
-   Compiling tonic v0.12.3
-   Compiling splinter-filter v0.6.0 (/workspace/scratch/bfe77a764fc1/work/SplinterBridge-main/crates/splinter-filter)
-   Compiling splinter-safety v0.6.0 (/workspace/scratch/bfe77a764fc1/work/SplinterBridge-main/crates/splinter-safety)
-   Compiling splinter-core v0.6.0 (/workspace/scratch/bfe77a764fc1/work/SplinterBridge-main/crates/splinter-core)
-    Finished `release` profile [optimized] target(s) in 25.62s
+$ cargo build --release --locked
+    Finished `release` profile [optimized] target(s) in 2.13s
 Exit status: 0
 
-$ cargo run -p splinter-core --example federate --locked --offline
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
-     Running `target/debug/examples/federate`
+$ cargo run -q -p splinter-core --example federate --locked
 This interaction connects an overseas service with a service in mainland China. China-route content restrictions apply, and some messages may be rejected. Conversations exclusively between overseas users do not use this China-specific filter.
 GlobalGdpr -> CnPiplCac: @example | Example | 42 followers | private=true
 This interaction connects an overseas service with a service in mainland China. China-route content restrictions apply, and some messages may be rejected. Conversations exclusively between overseas users do not use this China-specific filter.
 CnPiplCac -> GlobalGdpr: @example | Example | 42 followers | private=true
+audit #1 envelope_export 1->2 allowed -
+audit #2 envelope_accept 1->2 allowed -
+audit #3 envelope_accept 1->2 rejected REPLAY_DETECTED
+audit #4 envelope_export 2->1 allowed -
+audit #5 envelope_accept 2->1 allowed -
+audit #6 envelope_accept 2->1 rejected REPLAY_DETECTED
+audit head a62684f03ac961172e32695b7bfae0edda26e05569076353f69ef0dd8504731c
 Exit status: 0
-

@@ -43,11 +43,12 @@ cargo fmt --all -- --check
 - Media comparison is local; no external media requests in the matching path.
 - Errors must not carry matched text or matched values.
 - Do not claim the libraries guarantee anonymity or legal compliance.
-- New compliance modules (`doj_compliance`, `attestation`, `audit_log`, `killswitch`) default to **deny**; they are trait interfaces only — operators must wire their own production backends.
+- `doj_compliance` and `attestation` default to **deny** and are trait interfaces only. `replay`, `rate_limit`, `audit_log` and `killswitch` have single-process implementations wired into the gateways; production needs shared/durable backends.
+- `InboundGateway::accept` fails closed without `with_replay_cache`. Audit records carry value-free codes only; a failed append rejects the operation.
 
 ## Notable gotchas
 
-- `clippy`/`rustfmt` not installed in this environment; do not run install steps.
+- CI enforces `cargo fmt --check` and `clippy -D warnings`; run both before pushing. If they are missing, say so instead of running install steps.
 - `OutboundError::review_json()` returns fixed codes only — never echo matched text.
 - Media catalog starts empty; `OutboundGateway::prepare` rejects media exports until a catalog is loaded. Default PDQ Hamming threshold is 31 (inclusive).
 - `DropReasonDirectPiiDetected` blocks direct PII (email, phone, IPv4, national ID pattern) before crossing the border.

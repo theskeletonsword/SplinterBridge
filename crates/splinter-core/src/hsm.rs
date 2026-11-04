@@ -75,14 +75,14 @@ impl Default for SoftwareHsm {
 impl HsmSigner for SoftwareHsm {
     fn sign(&self, key_id: &str, message: &[u8]) -> Result<Vec<u8>, HsmError> {
         let keys = self.keys.read().expect("HSM key store lock poisoned");
-        let key = keys.get(key_id).ok_or_else(|| HsmError::KeyNotFound)?;
+        let key = keys.get(key_id).ok_or(HsmError::KeyNotFound)?;
         let signature = key.sign(message);
         Ok(signature.to_bytes().to_vec())
     }
 
     fn verifying_key(&self, key_id: &str) -> Result<VerifyingKey, HsmError> {
         let keys = self.keys.read().expect("HSM key store lock poisoned");
-        let key = keys.get(key_id).ok_or_else(|| HsmError::KeyNotFound)?;
+        let key = keys.get(key_id).ok_or(HsmError::KeyNotFound)?;
         Ok(key.verifying_key())
     }
 }

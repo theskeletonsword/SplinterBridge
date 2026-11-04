@@ -30,6 +30,10 @@ pub enum OutboundRejection {
     UnsupportedVideoHash,
     #[error("DIRECT_PII_DETECTED")]
     DirectPii(EgressFilterError),
+    #[error("KILL_SWITCH_TRIPPED")]
+    KillSwitchTripped,
+    #[error("AUDIT_UNAVAILABLE")]
+    AuditUnavailable,
 }
 
 /// Notices accompany every preparation rejection on a restricted cross-region route.
@@ -43,11 +47,18 @@ impl OutboundError {
     /// Value-free review response, suitable for adapter JSON errors. Never send
     /// arbitrary Debug/Display output, model responses or the local input record.
     pub fn review_json(&self) -> serde_json::Value {
+        if let OutboundRejection::Privacy(PrivacyReviewError::UncertainPersonalData { field }) =
+            &self.reason
+        {
+            return serde_json::json!({"code": self.code(), "field": field});
+        }
+        serde_json::json!({"code": self.code()})
+    }
+    /// Value-free rejection code, also used in audit records.
+    pub fn code(&self) -> &'static str {
         use OutboundRejection::*;
-        let code = match &self.reason {
-            Privacy(PrivacyReviewError::UncertainPersonalData { field }) => {
-                return serde_json::json!({"code": "UNCERTAIN_PERSONAL_DATA", "field": field});
-            }
+        match &self.reason {
+            Privacy(PrivacyReviewError::UncertainPersonalData { .. }) => "UNCERTAIN_PERSONAL_DATA",
             Privacy(PrivacyReviewError::ProhibitedField) => "PROHIBITED_FIELD",
             Policy(
                 EgressFilterError::CacViolation { .. } | EgressFilterError::RknViolation { .. },
@@ -58,9 +69,10 @@ impl OutboundError {
             UnapprovedProfileFields => "UNKNOWN_FIELD",
             DirectPii(_) => "DIRECT_PII_DETECTED",
             Media(_) | EmptySafetyCatalog | UnsupportedVideoHash => "MEDIA_POLICY",
+            KillSwitchTripped => "KILL_SWITCH_TRIPPED",
+            AuditUnavailable => "AUDIT_UNAVAILABLE",
             _ => "INVALID_PROJECTION",
-        };
-        serde_json::json!({"code": code})
+        }
     }
     pub fn policy_notices(&self) -> &[InteractionNotice] {
         &self.notices
@@ -97,7 +109,9 @@ pub(crate) fn check_export(
             &author.display_name,
             &author.public_avatar_url,
         ] {
-            filter.scan_direct_pii(text).map_err(OutboundRejection::DirectPii)?;
+            filter
+                .scan_direct_pii(text)
+                .map_err(OutboundRejection::DirectPii)?;
         }
         filter
             .assess_interaction(origin, destination, &event.text_content)
@@ -140,6 +154,8 @@ pub struct OutboundGateway<'a> {
     safety: &'a StopNciiEngine,
     routes: HashMap<Jurisdiction, ExportRoutePolicy>,
     review: Option<&'a SemanticReviewGate<'a>>,
+    audit: Option<&'a dyn AuditLog>,
+    kill_switch: Option<&'a dyn KillSwitch>,
 }
 impl<'a> OutboundGateway<'a> {
     pub fn new(
@@ -163,7 +179,60 @@ impl<'a> OutboundGateway<'a> {
             safety,
             routes: HashMap::new(),
             review: None,
+            audit: None,
+            kill_switch: None,
         })
+    }
+
+    /// Records every export decision (codes only, never content). If an append
+    /// fails, the export is refused: nothing is signed out without a record.
+    pub fn with_audit_log(mut self, audit: &'a dyn AuditLog) -> Self {
+        self.audit = Some(audit);
+        self
+    }
+
+    /// While the switch is tripped every export is refused before any work.
+    pub fn with_kill_switch(mut self, kill_switch: &'a dyn KillSwitch) -> Self {
+        self.kill_switch = Some(kill_switch);
+        self
+    }
+
+    fn ensure_running(&self, destination: Jurisdiction) -> Result<(), OutboundError> {
+        match self.kill_switch {
+            Some(ks) if ks.status() != KillSwitchStatus::Armed => {
+                Err(self.rejection(destination, OutboundRejection::KillSwitchTripped))
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn audited(
+        &self,
+        destination: Jurisdiction,
+        result: Result<FederatedEventEnvelope, OutboundError>,
+    ) -> Result<FederatedEventEnvelope, OutboundError> {
+        let Some(log) = self.audit else {
+            return result;
+        };
+        let (outcome, reason) = match &result {
+            Ok(_) => ("allowed", None),
+            Err(e) => ("rejected", Some(e.code())),
+        };
+        let record = AuditRecord::new(
+            "envelope_export",
+            self.origin as u32,
+            destination as u32,
+            &self.key_id,
+            outcome,
+            reason,
+        );
+        match (log.append(&record), result) {
+            (Ok(_), result) => result,
+            (Err(_), Ok(_)) => {
+                Err(self.rejection(destination, OutboundRejection::AuditUnavailable))
+            }
+            (Err(_), Err(e)) => Err(e),
+        }
     }
 
     pub fn with_route_policy(
@@ -210,6 +279,37 @@ impl<'a> OutboundGateway<'a> {
         pepper: &RegionalPepper,
         draft: &LocalEventDraft,
     ) -> Result<FederatedEventEnvelope, OutboundError> {
+        self.guarded(
+            destination,
+            self.prepare_local_unaudited(destination, raw, pepper, draft),
+        )
+        .await
+    }
+
+    /// Runs `work` only while the kill switch is armed, then audits the result.
+    async fn guarded(
+        &self,
+        destination: Jurisdiction,
+        work: impl std::future::Future<Output = Result<FederatedEventEnvelope, OutboundError>>,
+    ) -> Result<FederatedEventEnvelope, OutboundError> {
+        let result = match self.ensure_running(destination) {
+            // Re-check after the (possibly slow) review: a switch tripped
+            // meanwhile must still stop the signed envelope from leaving.
+            Ok(()) => work
+                .await
+                .and_then(|envelope| self.ensure_running(destination).map(|_| envelope)),
+            Err(e) => Err(e),
+        };
+        self.audited(destination, result)
+    }
+
+    async fn prepare_local_unaudited(
+        &self,
+        destination: Jurisdiction,
+        raw: &RawInternalUserProfile,
+        pepper: &RegionalPepper,
+        draft: &LocalEventDraft,
+    ) -> Result<FederatedEventEnvelope, OutboundError> {
         let policy = self.route_policy(destination)?;
         let event = crate::boundary::project_local_event(
             raw,
@@ -225,12 +325,21 @@ impl<'a> OutboundGateway<'a> {
                 .assess_interaction(self.origin, destination, "")
                 .notices,
         })?;
-        self.prepare(destination, &event).await
+        self.prepare_unaudited(destination, &event).await
     }
 
     /// Advanced API for already approved projections. It validates shape, routing,
     /// policy and media, but cannot detect every sensitive value inside arbitrary text.
     pub async fn prepare(
+        &self,
+        destination: Jurisdiction,
+        event: &CrossBorderEventPayload,
+    ) -> Result<FederatedEventEnvelope, OutboundError> {
+        self.guarded(destination, self.prepare_unaudited(destination, event))
+            .await
+    }
+
+    async fn prepare_unaudited(
         &self,
         destination: Jurisdiction,
         event: &CrossBorderEventPayload,
