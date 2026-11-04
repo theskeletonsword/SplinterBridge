@@ -18,7 +18,8 @@ and does not guarantee regulatory compliance, anonymity, or absence of personal 
 | `splinter-core` | Minimal projection, route opt-in, async semantic review gate, host-local gRPC classifier client, inbound verification, Ed25519 signatures |
 | `splinter-filter` | Route-specific literal matching with lowercase, fullwidth ASCII and common invisible/whitespace normalization |
 | `splinter-safety` | Local Hamming-distance comparison of supplied 256-bit fingerprints |
-| `splinter-core` (modules) | `ephemeral`: unlinkable ephemeral DIDs with rotating seeds and crypto-shredding; `differential_privacy`: Laplace/Gaussian noise, ε-counting and k-anonymity gates for aggregated metrics; `merkle`: local Merkle commitments binding an actor to a retained civil identity (root only crosses the border) |
+| `splinter-core` (modules) | `ephemeral`: unlinkable ephemeral DIDs with rotating seeds and crypto-shredding; `differential_privacy`: Laplace/Gaussian noise, ε-counting and k-anonymity gates for aggregated metrics; `merkle`: local Merkle commitments binding an actor to a retained civil identity; `hsm`: HSM abstraction trait (`HsmSigner`, `SoftwareHsm`) for FIPS 140-3 / OSCCA GM/T key custody; `replay`: anti-replay sliding-window nonce cache (`ReplayCache`, `SlidingWindowReplayCache`); `rate_limit`: distributed backpressure and admission control (`RateLimiter`, `NoopRateLimiter`, `TokenBucket`); `outbox`: durable outbox/inbox interface traits (`Outbox`, `Inbox`, `NoopOutbox`, `NoopInbox`) for Kafka/Pulsar/Raft-backed delivery |
+| `splinter-filter` (modules) | `catalog`: hot-reloadable regulatory catalog trait (`RegulatoryCatalog`, `AllowAllCatalog`) for zero-downtime CAC/RKN catalog updates |
 
 The facade crate `splinter-core` re-exports the other crates' APIs.
 
