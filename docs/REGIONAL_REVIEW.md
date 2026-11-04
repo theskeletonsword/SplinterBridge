@@ -66,6 +66,9 @@ relaying data. Deny worker network egress and audit its deployment.
 
 This architecture supports separation and minimization; it does not establish
 whether a particular operator owes fines or complies with any jurisdiction.
+See [Legal applicability and deployment requirements](LEGAL_DEPLOYMENT.md) for
+source-linked obligations and the separate local authorization process required
+before technical route configuration.
 
 ## Enforced export sequence
 

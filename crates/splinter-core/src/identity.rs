@@ -6,6 +6,24 @@
 //!
 //! Packages sanitized public profiles and generates Ed25519 signatures for
 //! authentic cross-border gateway verification.
+//!
+//! ## Pseudonymization is not anonymization
+//!
+//! `derive_federated_did` is deterministic: given the internal user ID and the
+//! regional pepper, the origin operator can recompute any account's DID and
+//! confirm a match (for example, under a court or police request). The origin
+//! backend still stores `user_id` and the pepper locally, so this is
+//! **pseudonimización de máxima frontera**, reversible por el origen — no
+//! anonimización irreversible bajo PIPL art. 73 ni GDPR Considerando 26.
+//! Public handles and names can identify people independently of the DID.
+//!
+//! For unlinkable, rotating-seed identifiers whose reversal secret is
+//! crypto-shredded, see [`crate::ephemeral`]. For aggregates without an
+//! individual trace, see [`crate::differential_privacy`]. The realistic
+//! industry path for a persistent-profile social network is to homologate this
+//! shielded pseudonymization inside formal transfer mechanisms (CAC assessment
+//! / standard contractual clauses), not to claim anonymous profiles. See
+//! docs/ANONYMIZATION.md.
 
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use hmac::{Hmac, Mac};
@@ -123,9 +141,15 @@ pub struct PublicProfileOptions {
     pub badges: bool,
 }
 
-/// Generates an immutable, non-reversible `federated_did` using HMAC-SHA256 with regional pepper.
+/// Generates a deterministic, pseudonymizing `federated_did` using HMAC-SHA256 with regional pepper.
 ///
 /// Output format: `did:splinter:<jurisdiction_code>:<hex_digest>`
+///
+/// WARNING: this is reversible by the origin operator holding the pepper and
+/// the local `internal_user_id`. It is state-of-the-art pseudonymization, not
+/// legal anonymization: a court or the origin backend can confirm whether a DID
+/// belongs to a given user ID. For unlinkable rotating-seed identifiers see
+/// [`crate::ephemeral::derive_ephemeral_did`].
 pub fn derive_federated_did(
     internal_user_id: &str,
     jurisdiction: Jurisdiction,

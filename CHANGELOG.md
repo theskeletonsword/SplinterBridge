@@ -1,4 +1,33 @@
-# 0.6.0
+# 0.7.0
+
+Anonimización y seudonimización (PIPL art. 73 / GDPR Considerando 26), 2026-11-04:
+- Nuevo módulo `splinter_core::ephemeral`: identificadores efímeros con semilla
+  maestra rotatoria por época, `derive_ephemeral_did` no vinculable entre
+  épocas, `EphemeralSession` con crypto-shredding (zeroize) del nonce al
+  dropear y `EphemeralVault` con rotación de claves de época destruidas en
+  memoria. Respuesta al problema de que `derive_federated_did` es reversible
+  por el origen operator con el pepper local (seudonimización, no anonimización).
+- Nuevo módulo `splinter_core::differential_privacy`: ruido laplaciano y
+  gaussiano, conteo diferencial (epsilon) y puerta k-anónima para agregados
+  de métricas/telemetría sin traza individual.
+- Nueva guía docs/ANONYMIZATION.md: distingue seudonimización de anonimización
+  bajo PIPL art. 73 y GDPR Considerando 26, describe los tres caminos técnicos
+  y el camino realista de transferencia (evaluación CAC / contratos estándar).
+- Documenta en `identity.rs` que `derive_federated_did` es determinista y
+  reversible por el origen; remite a `ephemeral` para identificadores
+  no vinculables.
+- Bump de versión a 0.7.0. Ningún cambio en campos de proto, números de campo
+  ni formatos de firma.
+
+Documentation revision, 2026-11-04:
+- Update README and the informational NOTICE sections with source-linked legal
+  applicability guidance for mainland China, the EU/EEA and selected U.S. regimes.
+- Correct assumptions about anonymity, HSM/enclave/TMK implementation, signatures,
+  regulator contracts, content-filter immunity and automatic transfer compliance.
+- Add docs/LEGAL_DEPLOYMENT.md with applicable mechanisms, primary sources and an
+  operator-evidence matrix. Preserve blind-backend separation and the Apache
+  license/attributions. No Rust, protobuf, dependency or runtime changes.
+
 
 - Require per-destination route/content/extra-field opt-ins and asynchronous
   origin-local semantic review on both outbound preparation APIs before signing.

@@ -1,7 +1,7 @@
 # SplinterBridge
 
 Rust libraries and a Protocol Buffers contract for server-to-server federation
-between independently operated social backends. Version 0.6.0, Apache-2.0.
+between independently operated social backends. Version 0.7.0, Apache-2.0.
 The protocol is platform-neutral: TikTok/Douyin, Meta products and other networks
 are possible integration examples, not dependencies or existing partnerships.
 
@@ -18,6 +18,7 @@ and does not guarantee regulatory compliance, anonymity, or absence of personal 
 | `splinter-core` | Minimal projection, route opt-in, async semantic review gate, host-local gRPC classifier client, inbound verification, Ed25519 signatures |
 | `splinter-filter` | Route-specific literal matching with lowercase, fullwidth ASCII and common invisible/whitespace normalization |
 | `splinter-safety` | Local Hamming-distance comparison of supplied 256-bit fingerprints |
+| `splinter-core` (modules) | `ephemeral`: unlinkable ephemeral DIDs with rotating seeds and crypto-shredding; `differential_privacy`: Laplace/Gaussian noise, ε-counting and k-anonymity gates for aggregated metrics |
 
 The facade crate `splinter-core` re-exports the other crates' APIs.
 
@@ -113,19 +114,41 @@ The same separation applies to every integrating social network.
 
 ### Regulatory purpose and implementation scope
 
-The separation is intended to avoid direct cross-region backend and database
-coupling and support independent regional governance. A deployment involving
-China, the United States or Europe must assess its actual data flows, access
-rights and applicable requirements separately. This project does not conclude
-that a particular architecture necessarily triggers or avoids fines or sanctions
-for ByteDance, Meta or another operator. Mutually blind backends and content
-filters are architectural requirements of this design, not regulatory approval.
+Backend isolation is a design requirement that can support data minimization and
+regional governance. It is not a legal safe harbor: approved public projections
+can still be personal information and regulated cross-border transfers. The
+project does not conclude that a particular architecture automatically triggers
+or avoids fines, sanctions or other action against any operator.
 
-There is no backend/database connection code in this reference implementation.
-Transport and network isolation remain deployment work. The Rust boundary now
-projects local records, validates exported fields and verifies received events
-against a locally provisioned peer key and region. Provisioning trust and deciding
-which public values are approved remain responsibilities of each local adapter.
+Read [Legal applicability and deployment requirements](docs/LEGAL_DEPLOYMENT.md)
+(reviewed 2026-11-04) before enabling a production route. It distinguishes:
+
+| Area | Deployment assessment | What the code does not prove |
+| --- | --- | --- |
+| Mainland China | PIPL transfer mechanisms/exemptions, applicable CAC assessment/contract/certification, impact assessment; data classification, cybersecurity and content duties | Anonymity, CAC authorization or immunity from content liability |
+| EU/EEA | Lawful processing, relevant Chapter V transfer mechanism, contextual safeguards; applicable NIS2 and DSA obligations | Automatic Schrems II compliance or an Article 46 instrument merely from HMAC/signatures |
+| United States | Relevant PAFACA/CFIUS constraints and DOJ Data Security Program applicability | Permission for a data-sharing/operational relationship merely because DBs are separate |
+
+The guide links official sources, including Chinese measures effective in 2026,
+and distinguishes implemented safeguards from operator obligations and proposed
+activation controls. It is engineering guidance, not a deployment-specific legal
+opinion. The regional operator must assess the actual parties, purposes, data,
+scale and current applicable measures with qualified counsel.
+
+Version 0.6.0 stores the pepper in process memory, not an HSM; rejects unsupported
+hardware attestations; and compares supplied media fingerprints without generating
+PDQ or implementing TMK. Ed25519 authenticates signed data; it does not encrypt
+payloads. Public handles and names can identify users even when protocol IDs are
+pseudonymous. Local keyword/semantic review cannot guarantee that every prohibited
+value is detected or that an operator has discharged its legal obligations.
+
+`with_route_policy` and `MINIMAL_EGRESS_V1` are technical controls, not evidence of
+legal authorization. A production operator needs a separate local activation
+process that verifies current authorization evidence before enabling each route.
+No consent ledger, legal-evidence verifier or regulatory-volume counter is supplied.
+There is no backend/database connector or complete federation transport service.
+Network isolation, transport, retention/rights workflows and operational controls
+remain deployment work. This documentation update does not implement those systems.
 
 ## Interaction policy matrix
 
@@ -140,7 +163,10 @@ nationality, language, device locale or a client-supplied flag.
 | China | China | Yes | No cross-region notice needed |
 
 Here Overseas means the `GlobalGdpr` backend profile. Other destination policies,
-such as the existing Russia example catalog, remain independent.
+such as the existing Russia example catalog, remain independent. These enum labels
+select library behavior; they do not determine the full legal scope of EU, U.S.,
+Chinese or other obligations. Maintain actual entity/country and authorization
+facts in trusted local deployment configuration.
 
 `assess_interaction(origin, destination, text)` applies this matrix and returns
 both notice codes and the content result. Use it before opening the composer
@@ -202,9 +228,9 @@ exporting their posts. It generates ephemeral keys, uses an exact synthetic-fixt
 semantic model), and does not open a network connection. `interaction_notice_en` supplies suggested English notice copy for
 adapters; actual UI presentation still belongs to the platform.
 
-The reviewer integration does not supply a model or establish its accuracy on arbitrary text,
-whether a trusted origin's public claims are truthful, or whether an operator has
-configured network rules correctly. It is not a running federation service.
+The reviewer integration supplies no model and establishes neither its accuracy
+nor the truth of an origin's public-profile claims. It also cannot verify the
+operator's network configuration. It is not a running federation service.
 
 ## Origin-local semantic review
 
@@ -281,6 +307,26 @@ signature-format review. Verification authenticates the key's statement; it
 does not prove the signer is authorized or a hardware assertion is valid.
 Resolve the key ID through a trusted registry and enforce local destination,
 size limits and validation separately.
+
+### Pseudonymization vs anonymization (PIPL art. 73 / GDPR Recital 26)
+
+`derive_federated_did` is deterministic given the internal user ID and the
+regional pepper: the origin operator holding the pepper can recompute any
+account's DID and confirm a match (e.g. under a court order). The origin backend
+still stores `user_id` and the pepper locally, so this is **state-of-the-art
+pseudonymization, reversible by the origin**, not legal anonymization under
+PIPL Art. 73 or GDPR Recital 26. Public handles and names can identify people
+independently of the DID.
+
+For unlinkable identifiers whose reversal secret is crypto-shredded, see the
+`ephemeral` module (`derive_ephemeral_did`, `EphemeralSession`,
+`EphemeralVault`, rotating epoch seeds). For aggregates without an individual
+trace, see `differential_privacy` (Laplace/Gaussian noise, ε-counting,
+k-anonymity gates). A persistent-profile social network cannot be absolutely
+anonymous: a face or voice with a stable handle links content to a physical
+person. The realistic industry path is to homologate this shielded pseudonymization
+within formal transfer mechanisms (CAC assessment / standard contractual clauses),
+not to claim anonymous profiles. Full analysis: docs/ANONYMIZACION.md.
 
 ### Migration from earlier releases
 

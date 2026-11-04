@@ -4,6 +4,8 @@
 //! cross-border federation between isolated sovereign social networks.
 
 pub mod boundary;
+pub mod differential_privacy;
+pub mod ephemeral;
 pub mod identity;
 pub mod inbound;
 pub mod outbound;
@@ -23,6 +25,13 @@ pub use outbound::{OutboundError, OutboundGateway, OutboundRejection};
 pub use identity::{
     derive_federated_did, project_blind_profile, project_blind_profile_with_options, GatewaySigner,
     GatewayVerifier, IdentityError, PublicProfileOptions, RawInternalUserProfile, RegionalPepper,
+};
+pub use differential_privacy::{
+    DifferentialPrivacyError, gaussian_noise, k_anonymous_bucket, laplace_noise, noisy_count,
+};
+pub use ephemeral::{
+    derive_ephemeral_did, EphemeralPepper, EphemeralSession, EphemeralVault, DEFAULT_EPOCH_SECONDS,
+    valid_ephemeral_did,
 };
 pub use splinter_filter::{EgressFilterError, InteractionAssessment, PreflightEgressFilter};
 pub use splinter_proto::*;
