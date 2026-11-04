@@ -1,3 +1,23 @@
+# 0.9.0
+
+Production-ready interfaces and known gaps (CAC / PIPL Art. 73 and NIST SP 800-188), 2026-11-04:
+- New module `splinter_core::replay`: anti-replay sliding-window nonce cache trait
+  (`ReplayCache`, `SlidingWindowReplayCache`) for distributed replay protection.
+- New module `splinter_core::rate_limit`: rate limiter trait (`RateLimiter`,
+  `NoopRateLimiter`, `TokenBucket`) for distributed backpressure and admission control.
+- New module `splinter_core::hsm`: HSM abstraction trait (`HsmSigner`,
+  `SoftwareHsm`) so operators can plug FIPS 140-3 / OSCCA GM/T HSMs via PKCS#11.
+- New module `splinter_core::outbox`: durable outbox/inbox interface traits
+  (`Outbox`, `Inbox`, `NoopOutbox`, `NoopInbox`) for Kafka/Pulsar/Raft-backed
+  durable delivery and idempotent receipt.
+- New module `splinter_filter::catalog`: hot-reloadable regulatory catalog trait
+  (`RegulatoryCatalog`, `AllowAllCatalog`) for zero-downtime catalog updates.
+- New doc `docs/PRODUCTION_REALITY.md`: five production barriers (durable delivery,
+  replay/backpressure, hardware sovereignty, false-negative legal liability,
+  CAC/PAFACA/CFIUS/TIA bureaucracy) with what the library provides vs. what
+  production requires.
+- Version bump to 0.9.0; no proto field-number or signature-format changes.
+
 # 0.8.0
 
 Formally homologable anonymization (CAC / PIPL Art. 73 and NIST SP 800-188), 2026-11-04:

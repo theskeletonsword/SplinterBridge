@@ -6,10 +6,14 @@
 pub mod boundary;
 pub mod differential_privacy;
 pub mod ephemeral;
+pub mod hsm;
 pub mod identity;
-pub mod merkle;
 pub mod inbound;
+pub mod merkle;
 pub mod outbound;
+pub mod outbox;
+pub mod rate_limit;
+pub mod replay;
 pub mod review;
 pub use review::*;
 #[cfg(unix)]
@@ -34,6 +38,10 @@ pub use ephemeral::{
     derive_ephemeral_did, EphemeralPepper, EphemeralSession, EphemeralVault, DEFAULT_EPOCH_SECONDS,
     valid_ephemeral_did,
 };
+pub use hsm::{HsmError, HsmSigner, SoftwareHsm};
+pub use outbox::{Inbox, Outbox, OutboxError, NoopInbox, NoopOutbox};
+pub use rate_limit::{NoopRateLimiter, RateLimitError, RateLimiter, RateLimitVerdict, TokenBucket};
+pub use replay::{DEFAULT_REPLAY_WINDOW_SECONDS, ReplayCache, ReplayCacheError, SlidingWindowReplayCache};
 pub use splinter_filter::{EgressFilterError, InteractionAssessment, PreflightEgressFilter};
 pub use splinter_proto::*;
 pub use splinter_safety::{PdqHash, StopNciiEngine, StopNciiError, DEFAULT_PDQ_HAMMING_THRESHOLD};

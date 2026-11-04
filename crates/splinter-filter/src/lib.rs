@@ -370,6 +370,8 @@ fn try_ipv4_from(text: &str, start: usize) -> Option<usize> {
     Some(pos)
 }
 
+pub mod catalog;
+
 #[cfg(test)]
 mod tests {
     use super::*;
