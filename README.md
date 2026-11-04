@@ -360,6 +360,6 @@ incomplete; arbitrary disallowed content cannot be identified by those lists alo
 
 For detailed engineering guidance on cross-border data transfer mechanisms, 
 statutory threshold baselines (CAC 2024/2026, GDPR/EDPB 01/2020, US PAFACA/DOJ 28 CFR Part 202), 
-and operator deployment responsibilities, see [LEGAL_APPLICABILITY.md](docs/LEGAL_APPLICABILITY.md).
+and operator deployment responsibilities, see [LEGAL_DEPLOYMENT.md](docs/LEGAL_DEPLOYMENT.md).
 
 See CHANGELOG.md for the changes and validation record.
